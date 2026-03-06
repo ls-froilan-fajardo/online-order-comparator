@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Online Order Price Comparator</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <nav class="top-nav">
+        <div class="nav-brand">
+            ONLINE ORDER PRICE COMPARATOR
+            <span id="help-btn" class="help-btn" title="How to use">?</span>
+        </div>
+        
+        <div class="upload-group">
+            <label>Lightspeed formatted file:</label>
+            <input type="file" id="csv-all" accept=".csv">
+        </div>
+        
+        <div class="upload-group">
+            <label>Prices only:</label>
+            <input type="file" id="csv-prices" accept=".csv">
+        </div>
+
+        <button id="btn-reset" class="btn-reset">Reset Data</button>
+    </nav>
+
+    <main id="main-workspace">
+        <div id="output-placeholder" class="placeholder-text">
+            <h3>Ready to process.</h3>
+            <p>Upload both CSV files above to automatically generate the table, or paste a JSON payload on the right.</p>
+        </div>
+
+        <div id="action-bar" style="display: none; gap: 20px;">
+            
+            <div class="action-half">
+                <div class="filter-group">
+                    <label for="type-filter">Type:</label>
+                    <select id="type-filter"></select>
+                </div>
+                <div class="filter-group">
+                    <label for="profile-filter">Profile:</label>
+                    <select id="profile-filter"></select>
+                </div>
+                <div class="filter-group" style="margin-left: 10px;">
+                    <label for="tax-type" style="color: #d69e2e;">Mode:</label>
+                    <select id="tax-type">
+                        <option value="exclusive">Tax Exclusive</option>
+                        <option value="inclusive">Tax Inclusive</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label for="tax-input" style="color: #d69e2e;">Tax %:</label>
+                    <input type="number" id="tax-input" placeholder="0" value="0" min="0" step="0.1" style="width: 60px; padding: 6px; font-size: 0.9rem; border-radius: 4px; border: 1px solid #cbd5e0; text-align: right;">
+                </div>
+            </div>
+
+            <div class="action-half">
+                <label for="json-input" style="white-space: nowrap;">JSON Extractor:</label>
+                <input type="text" id="json-input" placeholder="Paste your raw JSON text or server log here...">
+                
+                <div id="totals-badge" style="display: none; gap: 10px; align-items: center;">
+                    <span id="badge-paid" style="background: #e6fffa; color: #234e52; border: 1px solid #319795; padding: 6px 10px; border-radius: 4px; font-weight: bold; font-size: 0.85rem; white-space: nowrap;"></span>
+                    <span id="badge-calc" style="background: #fff5f5; color: #9b2c2c; border: 1px solid #e53e3e; padding: 6px 10px; border-radius: 4px; font-weight: bold; font-size: 0.85rem; white-space: nowrap;"></span>
+                </div>
+            </div>
+            
+        </div>
+
+        <div id="content-area">
+            <div id="table-container"></div>
+
+            <div id="json-panel">
+                <div id="accounting-groups"></div>
+                <div id="json-display"></div>
+            </div>
+        </div>
+    </main>
+
+    <div id="modal-backdrop"></div>
+    <div id="custom-modal">
+        <div id="custom-modal-title" class="modal-header">Item Details</div>
+        <div id="custom-modal-text"></div>
+        <button id="custom-modal-close">Close</button>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
