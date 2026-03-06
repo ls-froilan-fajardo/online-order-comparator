@@ -2,7 +2,7 @@
 const inputAll = document.getElementById('csv-all');
 const inputPrices = document.getElementById('csv-prices');
 const btnReset = document.getElementById('btn-reset'); 
-const btnHelp = document.getElementById('help-btn'); // NEW: Help button
+const btnHelp = document.getElementById('help-btn'); 
 const actionBar = document.getElementById('action-bar');
 const typeFilter = document.getElementById('type-filter');
 const profileFilter = document.getElementById('profile-filter');
@@ -204,8 +204,9 @@ function renderJSON() {
 
             jsonDisplay.innerHTML = theadHtml + tbodyHtml + `</table>`;
 
-            badgePaid.textContent = `💰 Paid: $${paymentAmount}`;
-            badgeCalc.textContent = `📊 POS Base: $${grandTotal.toFixed(2)}`;
+            // NEW: Updated Badge Labels Here
+            badgePaid.textContent = `💰 Paid Online: $${paymentAmount}`;
+            badgeCalc.textContent = `📊 Expected Payment: $${grandTotal.toFixed(2)}`;
             totalsBadge.style.display = "flex";
 
         } else {
