@@ -204,7 +204,6 @@ function renderJSON() {
 
             jsonDisplay.innerHTML = theadHtml + tbodyHtml + `</table>`;
 
-            // NEW: Updated Badge Labels Here
             badgePaid.textContent = `💰 Paid Online: $${paymentAmount}`;
             badgeCalc.textContent = `📊 Expected Payment: $${grandTotal.toFixed(2)}`;
             totalsBadge.style.display = "flex";
@@ -411,28 +410,43 @@ function renderTable(typeValue, profileValue) {
     } else {
         let filteredData = mainList.filter(item => item.Type === typeValue);
         filteredData.forEach(item => {
+            
+            // NEW LOGIC: Extract override price if the ROOT item is a group
+            let rootGroupOverrideObj = null;
+            let checkTypeStr = item.Type ? item.Type.toLowerCase() : "";
+            if (checkTypeStr === 'group') {
+                let groupPrice = getPriceInfo(item.SKU, profileValue);
+                if (groupPrice.raw !== null && !isNaN(groupPrice.raw)) {
+                    rootGroupOverrideObj = groupPrice;
+                }
+            }
+
             html += generateRowHTML(item, "combo", profileValue); 
             
             item.children.forEach(childSku => {
                 let childItem = itemDB[childSku];
                 if (childItem) {
-                    let levelClass = childItem.Type === 'group' ? 'group' : 'item';
+                    let childTypeStr = childItem.Type ? childItem.Type.toLowerCase() : "";
                     
-                    let groupOverrideObj = null;
-                    if (childItem.Type === 'group') {
-                        let groupPrice = getPriceInfo(childItem.SKU, profileValue);
-                        if (groupPrice.raw !== null && !isNaN(groupPrice.raw)) {
-                            groupOverrideObj = groupPrice;
+                    // Indentation logic: if root is a group, indent child by 1 level (group class). Else use proper class.
+                    let levelClass = (checkTypeStr === 'group') ? 'group' : (childTypeStr === 'group' ? 'group' : 'item');
+                    
+                    // Cascade override price
+                    let currentOverrideObj = rootGroupOverrideObj;
+                    if (childTypeStr === 'group') {
+                        let childGroupPrice = getPriceInfo(childItem.SKU, profileValue);
+                        if (childGroupPrice.raw !== null && !isNaN(childGroupPrice.raw)) {
+                            currentOverrideObj = childGroupPrice;
                         }
                     }
                     
-                    html += generateRowHTML(childItem, levelClass, profileValue);
+                    html += generateRowHTML(childItem, levelClass, profileValue, currentOverrideObj);
                     
                     if (childItem.children.length > 0) {
                         childItem.children.forEach(grandChildSku => {
                             let grandChildItem = itemDB[grandChildSku];
                             if (grandChildItem) {
-                                html += generateRowHTML(grandChildItem, "item", profileValue, groupOverrideObj);
+                                html += generateRowHTML(grandChildItem, "item", profileValue, currentOverrideObj);
                             }
                         });
                     }
