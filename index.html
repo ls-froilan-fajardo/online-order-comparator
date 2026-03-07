@@ -36,7 +36,7 @@
 
         <div id="action-bar" style="display: none; gap: 20px;">
             
-            <div class="action-half">
+            <div class="action-half" style="flex-wrap: wrap;">
                 <div class="filter-group">
                     <label for="type-filter">Type:</label>
                     <select id="type-filter"></select>
@@ -52,31 +52,54 @@
                         <option value="inclusive">Tax Inclusive</option>
                     </select>
                 </div>
-                <div class="filter-group">
-                    <label for="tax-input" style="color: #d69e2e;">Tax %:</label>
-                    <input type="number" id="tax-input" placeholder="0" value="0" min="0" step="0.1" style="width: 60px; padding: 6px; font-size: 0.9rem; border-radius: 4px; border: 1px solid #cbd5e0; text-align: right;">
+
+                <div style="display: flex; gap: 10px; margin-top: 5px; width: 100%;">
+                    <div class="filter-group">
+                        <label style="color: #319795;">T1%:</label>
+                        <input type="number" id="tax-input-1" class="tax-input" placeholder="0" value="0" min="0" step="0.1">
+                    </div>
+                    <div class="filter-group">
+                        <label style="color: #3182ce;">T2%:</label>
+                        <input type="number" id="tax-input-2" class="tax-input" placeholder="0" value="0" min="0" step="0.1">
+                    </div>
+                    <div class="filter-group">
+                        <label style="color: #805ad5;">T3%:</label>
+                        <input type="number" id="tax-input-3" class="tax-input" placeholder="0" value="0" min="0" step="0.1">
+                    </div>
+                    <div class="filter-group">
+                        <label style="color: #dd6b20;">T4%:</label>
+                        <input type="number" id="tax-input-4" class="tax-input" placeholder="0" value="0" min="0" step="0.1">
+                    </div>
                 </div>
             </div>
 
             <div class="action-half">
-                <label for="json-input" style="white-space: nowrap;">JSON Extractor:</label>
-                <input type="text" id="json-input" placeholder="Paste your raw JSON text or server log here...">
-                
-                <div id="totals-badge" style="display: none; gap: 10px; align-items: center;">
-                    <span id="badge-paid" style="background: #e6fffa; color: #234e52; border: 1px solid #319795; padding: 6px 10px; border-radius: 4px; font-weight: bold; font-size: 0.85rem; white-space: nowrap;"></span>
-                    <span id="badge-calc" style="background: #fff5f5; color: #9b2c2c; border: 1px solid #e53e3e; padding: 6px 10px; border-radius: 4px; font-weight: bold; font-size: 0.85rem; white-space: nowrap;"></span>
+                <div style="display: flex; flex-direction: column; width: 100%; gap: 10px;">
+                    <div style="display: flex; align-items: center; gap: 10px; width: 100%;">
+                        <label for="json-input" style="white-space: nowrap;">JSON Extractor:</label>
+                        <input type="text" id="json-input" placeholder="Paste your raw JSON text or server log here...">
+                    </div>
+                    
+                    <div id="totals-badge" style="display: none; gap: 10px; align-items: center;">
+                        <span id="badge-paid" style="background: #e6fffa; color: #234e52; border: 1px solid #319795; padding: 6px 10px; border-radius: 4px; font-weight: bold; font-size: 0.85rem; white-space: nowrap;"></span>
+                        <span id="badge-calc" style="background: #fff5f5; color: #9b2c2c; border: 1px solid #e53e3e; padding: 6px 10px; border-radius: 4px; font-weight: bold; font-size: 0.85rem; white-space: nowrap;"></span>
+                    </div>
                 </div>
             </div>
             
         </div>
 
         <div id="content-area">
-            <div id="table-container"></div>
+            
+            <div id="left-panel">
+                <div id="accounting-groups"></div>
+                <div id="table-container"></div>
+            </div>
 
             <div id="json-panel">
-                <div id="accounting-groups"></div>
                 <div id="json-display"></div>
             </div>
+            
         </div>
     </main>
 
