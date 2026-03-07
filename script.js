@@ -101,7 +101,7 @@ function renderJSON() {
                 // Info Icon for Main Item
                 const groupTooltip = itemAccGroup ? `<strong>Accounting Group:</strong><br>${itemAccGroup}` : "<strong>Accounting Group:</strong><br>Not Assigned";
                 const safeGroupTooltip = groupTooltip.replace(/'/g, "\\'"); 
-                const infoIcon = `<span onclick="showInfoModal('${safeGroupTooltip}')" style="cursor: pointer; color: #a0aec0; margin-left: 6px; font-size: 1.1em; vertical-align: text-bottom;">&#9432;</span>`;
+                const infoIcon = `<span onclick="showInfoModal('${safeGroupTooltip}')" style="cursor: pointer; color: #a0aec0; margin-left: 6px; font-size: 1.1em; vertical-align: middle;">&#9432;</span>`;
                 
                 let onlinePriceDisplay = (item.customItemPrice !== null && item.customItemPrice !== undefined) 
                     ? `$${parseFloat(item.customItemPrice).toFixed(2)}` 
@@ -112,9 +112,17 @@ function renderJSON() {
                 
                 // --- TAX EXCLUSION LOGIC ---
                 let appliedTaxPercentage = globalTaxPercentage;
+                let isTaxable = true;
+
                 if (itemAccGroup && !activeAccountingGroups.has(itemAccGroup)) {
                     appliedTaxPercentage = 0; // Tax Free if group is unselected
+                    isTaxable = false;
                 }
+
+                // NEW: Tax Status Badge
+                const taxBadge = isTaxable 
+                    ? `<span style="font-size: 0.6rem; background: #e6fffa; color: #234e52; padding: 2px 5px; border-radius: 4px; margin-left: 8px; border: 1px solid #319795; vertical-align: middle;">Taxable</span>`
+                    : `<span style="font-size: 0.6rem; background: #fff5f5; color: #9b2c2c; padding: 2px 5px; border-radius: 4px; margin-left: 8px; border: 1px solid #e53e3e; vertical-align: middle;">Tax-Free</span>`;
 
                 let priceWithTax = rawPrice;
                 if (currentTaxMode === 'exclusive') {
@@ -128,7 +136,7 @@ function renderJSON() {
                     <tr>
                         <td>${index + 1}</td>
                         <td style="font-weight: bold; color: #4a5568;">${sku}</td>
-                        <td style="color: #4a5568;">${itemName}${infoIcon}</td>
+                        <td style="color: #4a5568; display: flex; align-items: center; border-bottom: none;">${itemName}${taxBadge}${infoIcon}</td>
                         <td>${qty}</td>
                         <td style="color: #d69e2e; font-weight: 500;">${onlinePriceDisplay}</td>
                         <td style="font-weight: 500; color: #2b6cb0;">$${lineTotal.toFixed(2)}</td>
@@ -147,7 +155,7 @@ function renderJSON() {
                         // Info Icon for Sub Item
                         const subGroupTooltip = subItemAccGroup ? `<strong>Accounting Group:</strong><br>${subItemAccGroup}` : "<strong>Accounting Group:</strong><br>Not Assigned";
                         const safeSubGroupTooltip = subGroupTooltip.replace(/'/g, "\\'");
-                        const subInfoIcon = `<span onclick="showInfoModal('${safeSubGroupTooltip}')" style="cursor: pointer; color: #cbd5e0; margin-left: 6px; font-size: 1.1em; vertical-align: text-bottom;">&#9432;</span>`;
+                        const subInfoIcon = `<span onclick="showInfoModal('${safeSubGroupTooltip}')" style="cursor: pointer; color: #cbd5e0; margin-left: 6px; font-size: 1.1em; vertical-align: middle;">&#9432;</span>`;
 
                         let subOnlinePriceDisplay = (subItem.customItemPrice !== null && subItem.customItemPrice !== undefined) 
                             ? `$${parseFloat(subItem.customItemPrice).toFixed(2)}` 
@@ -158,9 +166,17 @@ function renderJSON() {
 
                         // --- TAX EXCLUSION LOGIC (SUB ITEMS) ---
                         let subAppliedTaxPercentage = globalTaxPercentage;
+                        let isSubTaxable = true;
+
                         if (subItemAccGroup && !activeAccountingGroups.has(subItemAccGroup)) {
                             subAppliedTaxPercentage = 0; 
+                            isSubTaxable = false;
                         }
+
+                        // NEW: Tax Status Badge for Sub Item
+                        const subTaxBadge = isSubTaxable 
+                            ? `<span style="font-size: 0.6rem; background: #e6fffa; color: #234e52; padding: 2px 5px; border-radius: 4px; margin-left: 8px; border: 1px solid #319795; vertical-align: middle;">Taxable</span>`
+                            : `<span style="font-size: 0.6rem; background: #fff5f5; color: #9b2c2c; padding: 2px 5px; border-radius: 4px; margin-left: 8px; border: 1px solid #e53e3e; vertical-align: middle;">Tax-Free</span>`;
 
                         let subPriceWithTax = subRawPrice;
                         if (currentTaxMode === 'exclusive') {
@@ -176,7 +192,7 @@ function renderJSON() {
                                 <td style="padding-left: 25px; color: #718096; font-size: 0.75rem;">
                                     <span style="color: #cbd5e0; margin-right: 4px;">↳</span>${subSku}
                                 </td>
-                                <td style="color: #718096; font-size: 0.75rem;">${subItemName}${subInfoIcon}</td>
+                                <td style="color: #718096; font-size: 0.75rem; display: flex; align-items: center; border-bottom: none;">${subItemName}${subTaxBadge}${subInfoIcon}</td>
                                 <td style="color: #718096; font-size: 0.75rem;">${subQty}</td>
                                 <td style="color: #d69e2e; font-size: 0.75rem;">${subOnlinePriceDisplay}</td>
                                 <td style="color: #718096; font-size: 0.75rem;">$${subLineTotal.toFixed(2)}</td>
@@ -411,7 +427,6 @@ function renderTable(typeValue, profileValue) {
         let filteredData = mainList.filter(item => item.Type === typeValue);
         filteredData.forEach(item => {
             
-            // NEW LOGIC: Extract override price if the ROOT item is a group
             let rootGroupOverrideObj = null;
             let checkTypeStr = item.Type ? item.Type.toLowerCase() : "";
             if (checkTypeStr === 'group') {
@@ -428,10 +443,8 @@ function renderTable(typeValue, profileValue) {
                 if (childItem) {
                     let childTypeStr = childItem.Type ? childItem.Type.toLowerCase() : "";
                     
-                    // Indentation logic: if root is a group, indent child by 1 level (group class). Else use proper class.
                     let levelClass = (checkTypeStr === 'group') ? 'group' : (childTypeStr === 'group' ? 'group' : 'item');
                     
-                    // Cascade override price
                     let currentOverrideObj = rootGroupOverrideObj;
                     if (childTypeStr === 'group') {
                         let childGroupPrice = getPriceInfo(childItem.SKU, profileValue);
@@ -485,10 +498,9 @@ function generateRowHTML(item, level, profileValue, inheritedPriceObj = null) {
 
     if (rawCalcPrice !== null && !isNaN(rawCalcPrice)) {
         
-        // --- TAX EXCLUSION LOGIC ---
         let appliedTaxPercentage = globalTaxPercentage;
         if (item.AccountingGroup && !activeAccountingGroups.has(item.AccountingGroup)) {
-            appliedTaxPercentage = 0; // Tax Free
+            appliedTaxPercentage = 0; 
         }
         
         let finalPrice = rawCalcPrice; 
