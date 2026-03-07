@@ -7,7 +7,10 @@ const actionBar = document.getElementById('action-bar');
 const typeFilter = document.getElementById('type-filter');
 const profileFilter = document.getElementById('profile-filter');
 const taxType = document.getElementById('tax-type'); 
-const taxInput = document.getElementById('tax-input');
+const taxInput1 = document.getElementById('tax-input-1');
+const taxInput2 = document.getElementById('tax-input-2');
+const taxInput3 = document.getElementById('tax-input-3');
+const taxInput4 = document.getElementById('tax-input-4');
 const tableContainer = document.getElementById('table-container');
 
 // JSON DOM Elements
@@ -30,7 +33,7 @@ let itemDB = {};
 let priceDB = {};  
 let allData = [];
 let filesLoaded = false;
-let activeAccountingGroups = new Set(); 
+let groupTaxMapping = new Map(); // Maps AccountingGroup -> Tax Level (1, 2, 3, 4, or 0 for exempt)
 
 // --- MODAL LOGIC & HELP INSTRUCTIONS ---
 window.showInfoModal = function(text, title = "Item Details") {
@@ -51,15 +54,37 @@ modalBackdrop.addEventListener('click', closeInfoModal);
 btnHelp.addEventListener('click', () => {
     const helpInstructions = `
         <ol style="padding-left: 20px; margin-top: 0; margin-bottom: 0;">
-            <li style="margin-bottom: 10px;"><strong>Upload CSV Files:</strong> Upload your <em>Lightspeed formatted file</em> (which holds SKUs and Accounting Groups) and your <em>Prices only</em> CSV.</li>
-            <li style="margin-bottom: 10px;"><strong>Configure Settings:</strong> Select an Account Profile (e.g., DoorDash, UberEats), input your Tax %, and choose Tax Exclusive or Inclusive.</li>
-            <li style="margin-bottom: 10px;"><strong>Toggle Taxes:</strong> Click the "Taxable Groups" badges above the right-hand table to easily include or exclude tax for specific accounting groups.</li>
+            <li style="margin-bottom: 10px;"><strong>Upload CSV Files:</strong> Upload your <em>Lightspeed formatted file</em> and your <em>Prices only</em> CSV.</li>
+            <li style="margin-bottom: 10px;"><strong>Configure Taxes:</strong> Select an Account Profile, choose Tax Exclusive or Inclusive, and enter your different Tax Percentages (T1 through T4).</li>
+            <li style="margin-bottom: 10px;"><strong>Map Accounting Groups:</strong> Use the dropdown cards above the left-hand table to assign specific tax rates to specific accounting groups (or mark them Tax-Free).</li>
             <li style="margin-bottom: 10px;"><strong>Analyze Order:</strong> Paste an online order JSON payload into the "JSON Extractor" field.</li>
-            <li><strong>Compare:</strong> The tool will pull in the online item prices and instantly calculate the expected POS Base total for comparison!</li>
+            <li><strong>Compare:</strong> The tool will pull in the online item prices, apply the exact taxes mapped to each item, and calculate the expected POS Base total!</li>
         </ol>
     `;
     showInfoModal(helpInstructions, "How to Use the Comparator");
 });
+
+// --- Helper to get the correct tax % for an item ---
+function getTaxConfig(accountingGroup) {
+    let taxLevel = 1; // Default to Tax 1 if group isn't mapped
+    
+    if (accountingGroup && groupTaxMapping.has(accountingGroup)) {
+        taxLevel = parseInt(groupTaxMapping.get(accountingGroup));
+    }
+
+    let percentage = 0;
+    if (taxLevel === 1) percentage = parseFloat(taxInput1.value) || 0;
+    else if (taxLevel === 2) percentage = parseFloat(taxInput2.value) || 0;
+    else if (taxLevel === 3) percentage = parseFloat(taxInput3.value) || 0;
+    else if (taxLevel === 4) percentage = parseFloat(taxInput4.value) || 0;
+
+    return { level: taxLevel, percentage: percentage };
+}
+
+function generateTaxBadge(taxLevel) {
+    if (taxLevel === 0) return `<span class="tax-badge tb-0">Tax-Free</span>`;
+    return `<span class="tax-badge tb-${taxLevel}">T${taxLevel}</span>`;
+}
 
 // --- Centralized JSON Extractor Logic ---
 function renderJSON() {
@@ -82,7 +107,6 @@ function renderJSON() {
         const items = parsedData?.items || [];
 
         let grandTotal = 0;
-        let globalTaxPercentage = parseFloat(taxInput.value) || 0;
         let currentTaxMode = taxType.value; 
         let currentProfile = profileFilter.value || 'Default';
         
@@ -98,7 +122,6 @@ function renderJSON() {
                 const itemName = itemData ? itemData.Name : (item.customItemName || "Unknown Item");
                 const itemAccGroup = itemData ? itemData.AccountingGroup : null;
                 
-                // Info Icon for Main Item
                 const groupTooltip = itemAccGroup ? `<strong>Accounting Group:</strong><br>${itemAccGroup}` : "<strong>Accounting Group:</strong><br>Not Assigned";
                 const safeGroupTooltip = groupTooltip.replace(/'/g, "\\'"); 
                 const infoIcon = `<span onclick="showInfoModal('${safeGroupTooltip}')" style="cursor: pointer; color: #a0aec0; margin-left: 6px; font-size: 1.1em; vertical-align: middle;">&#9432;</span>`;
@@ -110,23 +133,13 @@ function renderJSON() {
                 let pInfo = getPriceInfo(sku, currentProfile);
                 let rawPrice = (pInfo.raw !== null && !isNaN(pInfo.raw)) ? pInfo.raw : 0;
                 
-                // --- TAX EXCLUSION LOGIC ---
-                let appliedTaxPercentage = globalTaxPercentage;
-                let isTaxable = true;
-
-                if (itemAccGroup && !activeAccountingGroups.has(itemAccGroup)) {
-                    appliedTaxPercentage = 0; // Tax Free if group is unselected
-                    isTaxable = false;
-                }
-
-                // NEW: Tax Status Badge
-                const taxBadge = isTaxable 
-                    ? `<span style="font-size: 0.6rem; background: #e6fffa; color: #234e52; padding: 2px 5px; border-radius: 4px; margin-left: 8px; border: 1px solid #319795; vertical-align: middle;">Taxable</span>`
-                    : `<span style="font-size: 0.6rem; background: #fff5f5; color: #9b2c2c; padding: 2px 5px; border-radius: 4px; margin-left: 8px; border: 1px solid #e53e3e; vertical-align: middle;">Tax-Free</span>`;
+                // MULTI-TAX LOGIC
+                let taxCfg = getTaxConfig(itemAccGroup);
+                let taxBadge = generateTaxBadge(taxCfg.level);
 
                 let priceWithTax = rawPrice;
                 if (currentTaxMode === 'exclusive') {
-                    priceWithTax = rawPrice * (1 + (appliedTaxPercentage / 100));
+                    priceWithTax = rawPrice * (1 + (taxCfg.percentage / 100));
                 }
 
                 let lineTotal = priceWithTax * qty;
@@ -152,7 +165,6 @@ function renderJSON() {
                         const subItemName = subItemData ? subItemData.Name : (subItem.customItemName || "Unknown Item");
                         const subItemAccGroup = subItemData ? subItemData.AccountingGroup : null;
 
-                        // Info Icon for Sub Item
                         const subGroupTooltip = subItemAccGroup ? `<strong>Accounting Group:</strong><br>${subItemAccGroup}` : "<strong>Accounting Group:</strong><br>Not Assigned";
                         const safeSubGroupTooltip = subGroupTooltip.replace(/'/g, "\\'");
                         const subInfoIcon = `<span onclick="showInfoModal('${safeSubGroupTooltip}')" style="cursor: pointer; color: #cbd5e0; margin-left: 6px; font-size: 1.1em; vertical-align: middle;">&#9432;</span>`;
@@ -164,23 +176,13 @@ function renderJSON() {
                         let subPInfo = getPriceInfo(subSku, currentProfile);
                         let subRawPrice = (subPInfo.raw !== null && !isNaN(subPInfo.raw)) ? subPInfo.raw : 0;
 
-                        // --- TAX EXCLUSION LOGIC (SUB ITEMS) ---
-                        let subAppliedTaxPercentage = globalTaxPercentage;
-                        let isSubTaxable = true;
-
-                        if (subItemAccGroup && !activeAccountingGroups.has(subItemAccGroup)) {
-                            subAppliedTaxPercentage = 0; 
-                            isSubTaxable = false;
-                        }
-
-                        // NEW: Tax Status Badge for Sub Item
-                        const subTaxBadge = isSubTaxable 
-                            ? `<span style="font-size: 0.6rem; background: #e6fffa; color: #234e52; padding: 2px 5px; border-radius: 4px; margin-left: 8px; border: 1px solid #319795; vertical-align: middle;">Taxable</span>`
-                            : `<span style="font-size: 0.6rem; background: #fff5f5; color: #9b2c2c; padding: 2px 5px; border-radius: 4px; margin-left: 8px; border: 1px solid #e53e3e; vertical-align: middle;">Tax-Free</span>`;
+                        // MULTI-TAX LOGIC (SUB ITEMS)
+                        let subTaxCfg = getTaxConfig(subItemAccGroup);
+                        let subTaxBadge = generateTaxBadge(subTaxCfg.level);
 
                         let subPriceWithTax = subRawPrice;
                         if (currentTaxMode === 'exclusive') {
-                            subPriceWithTax = subRawPrice * (1 + (subAppliedTaxPercentage / 100));
+                            subPriceWithTax = subRawPrice * (1 + (subTaxCfg.percentage / 100));
                         }
 
                         let subLineTotal = subPriceWithTax * subQty;
@@ -254,7 +256,7 @@ btnReset.addEventListener('click', () => {
     priceDB = {};
     allData = [];
     filesLoaded = false;
-    activeAccountingGroups.clear();
+    groupTaxMapping.clear();
     
     document.getElementById('output-placeholder').style.display = 'block';
     actionBar.style.display = 'none';
@@ -264,7 +266,10 @@ btnReset.addEventListener('click', () => {
     accountingGroupsContainer.style.display = "none"; 
     accountingGroupsContainer.innerHTML = "";
     taxType.value = "exclusive"; 
-    taxInput.value = "0";
+    taxInput1.value = "0";
+    taxInput2.value = "0";
+    taxInput3.value = "0";
+    taxInput4.value = "0";
     closeInfoModal();
 });
 
@@ -287,42 +292,56 @@ function runCSVProcessing() {
                     priceDB = {};
                     let uniqueProfiles = new Set();
 
-                    // --- POPULATE ACCOUNTING GROUPS & BADGES ---
+                    // --- POPULATE ACCOUNTING GROUPS WITH DROPDOWNS ---
                     const uniqueAccountingGroups = [...new Set(allData.map(row => {
                         let grp = row['Accounting group'] || row['Accounting Group'];
                         return grp ? grp.trim() : '';
                     }).filter(Boolean))];
                     
-                    activeAccountingGroups.clear(); 
+                    // Sort the groups alphabetically (Symbols -> Numbers -> Letters)
+                    uniqueAccountingGroups.sort((a, b) => {
+                        const valA = a.toLowerCase();
+                        const valB = b.toLowerCase();
+                        if (valA < valB) return -1;
+                        if (valA > valB) return 1;
+                        return 0;
+                    });
+                    
+                    groupTaxMapping.clear(); 
 
                     if (uniqueAccountingGroups.length > 0) {
-                        accountingGroupsContainer.innerHTML = `<strong style="color: #2d3748; font-size: 0.85rem; padding-right: 5px;">Taxable Groups:</strong>`;
+                        accountingGroupsContainer.innerHTML = `<div class="ag-header">Tax Mapping:</div>`;
                         
                         uniqueAccountingGroups.forEach(groupName => {
-                            activeAccountingGroups.add(groupName); 
+                            groupTaxMapping.set(groupName, 1); // Set default to Tax 1
                             
-                            let badge = document.createElement('span');
-                            badge.className = 'group-badge active';
-                            badge.textContent = groupName;
+                            let card = document.createElement('div');
+                            card.className = 'ag-card';
                             
-                            badge.onclick = () => {
-                                if (activeAccountingGroups.has(groupName)) {
-                                    activeAccountingGroups.delete(groupName);
-                                    badge.classList.remove('active');
-                                    badge.classList.add('inactive');
-                                } else {
-                                    activeAccountingGroups.add(groupName);
-                                    badge.classList.remove('inactive');
-                                    badge.classList.add('active');
-                                }
+                            card.innerHTML = `
+                                <span class="ag-card-name" title="${groupName}">${groupName}</span>
+                                <select class="ag-card-select">
+                                    <option value="1">Tax 1</option>
+                                    <option value="2">Tax 2</option>
+                                    <option value="3">Tax 3</option>
+                                    <option value="4">Tax 4</option>
+                                    <option value="0">Tax-Free</option>
+                                </select>
+                            `;
+                            
+                            // Listen for dropdown changes
+                            const selectElement = card.querySelector('select');
+                            selectElement.addEventListener('change', (e) => {
+                                groupTaxMapping.set(groupName, parseInt(e.target.value));
                                 renderTable(typeFilter.value, profileFilter.value);
                                 renderJSON();
-                            };
+                            });
                             
-                            accountingGroupsContainer.appendChild(badge);
+                            accountingGroupsContainer.appendChild(card);
                         });
                         
-                        accountingGroupsContainer.style.display = 'flex';
+                        // NEW: Changes it to block layout to obey the CSS Multi-column rendering
+                        accountingGroupsContainer.style.display = 'block';
                     } else {
                         accountingGroupsContainer.style.display = 'none';
                     }
@@ -378,14 +397,18 @@ function runCSVProcessing() {
     });
 }
 
+// Global Triggers
 typeFilter.addEventListener('change', () => { renderTable(typeFilter.value, profileFilter.value); });
 profileFilter.addEventListener('change', () => { renderTable(typeFilter.value, profileFilter.value); renderJSON(); });
-taxType.addEventListener('change', () => { 
-    if (filesLoaded) { renderTable(typeFilter.value, profileFilter.value); renderJSON(); } 
-});
-taxInput.addEventListener('input', () => {
-    if (filesLoaded) { renderTable(typeFilter.value, profileFilter.value); renderJSON(); }
-});
+taxType.addEventListener('change', () => { if (filesLoaded) { renderTable(typeFilter.value, profileFilter.value); renderJSON(); } });
+
+// Trigger updates when ANY tax input changes
+const updateTaxes = () => { if (filesLoaded) { renderTable(typeFilter.value, profileFilter.value); renderJSON(); } };
+taxInput1.addEventListener('input', updateTaxes);
+taxInput2.addEventListener('input', updateTaxes);
+taxInput3.addEventListener('input', updateTaxes);
+taxInput4.addEventListener('input', updateTaxes);
+
 
 function getPriceInfo(sku, profileValue) {
     if (!priceDB[sku]) return { text: "", raw: null, isFallback: false }; 
@@ -494,18 +517,14 @@ function generateRowHTML(item, level, profileValue, inheritedPriceObj = null) {
 
     let afterTaxText = ""; 
     let currentTaxMode = taxType.value; 
-    let globalTaxPercentage = parseFloat(taxInput.value) || 0;
 
     if (rawCalcPrice !== null && !isNaN(rawCalcPrice)) {
-        
-        let appliedTaxPercentage = globalTaxPercentage;
-        if (item.AccountingGroup && !activeAccountingGroups.has(item.AccountingGroup)) {
-            appliedTaxPercentage = 0; 
-        }
+        // MULTI-TAX LOGIC FOR LEFT TABLE
+        let taxCfg = getTaxConfig(item.AccountingGroup);
         
         let finalPrice = rawCalcPrice; 
         if (currentTaxMode === 'exclusive') {
-            finalPrice = rawCalcPrice * (1 + (appliedTaxPercentage / 100));
+            finalPrice = rawCalcPrice * (1 + (taxCfg.percentage / 100));
         }
         
         afterTaxText = finalPrice.toFixed(2);
