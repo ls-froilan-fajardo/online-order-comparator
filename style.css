@@ -5,7 +5,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 .top-nav { background: #2d3748; color: white; padding: 10px 20px; display: flex; align-items: center; gap: 25px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); z-index: 100; flex-shrink: 0; }
 .nav-brand { font-weight: bold; font-size: 1.1rem; border-right: 1px solid #4a5568; padding-right: 20px; display: flex; align-items: center; }
 
-/* NEW: Help Button Styling */
+/* Help Button Styling */
 .help-btn { display: inline-block; margin-left: 12px; background: #4a5568; color: white; border-radius: 50%; width: 22px; height: 22px; text-align: center; line-height: 22px; font-size: 0.85rem; cursor: pointer; font-weight: bold; transition: all 0.2s; border: 1px solid #718096; }
 .help-btn:hover { background: #cbd5e0; color: #2d3748; border-color: #cbd5e0; }
 
@@ -23,10 +23,11 @@ input[type="file"] { font-size: 0.8rem; color: #e2e8f0; width: 200px; }
 
 /* Action Bar */
 #action-bar { margin-bottom: 20px; padding: 15px; background: white; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); flex-shrink: 0; width: 100%; box-sizing: border-box; }
-.action-half { flex: 1; display: flex; align-items: center; gap: 15px; min-width: 0; }
-.filter-group { display: flex; align-items: center; gap: 8px; }
+.action-half { flex: 1; display: flex; gap: 15px; min-width: 0; align-items: flex-start; }
+.filter-group { display: flex; align-items: center; gap: 6px; }
 #action-bar label { color: #2d3748; font-weight: bold; font-size: 0.9rem; }
 select { padding: 6px; font-size: 0.9rem; border-radius: 4px; border: 1px solid #cbd5e0; }
+.tax-input { width: 55px; padding: 6px; font-size: 0.9rem; border-radius: 4px; border: 1px solid #cbd5e0; text-align: right; }
 
 /* JSON Input Paste Bar */
 #json-input { flex-grow: 1; padding: 8px 12px; font-family: monospace; font-size: 0.85rem; border: 1px solid #cbd5e0; border-radius: 4px; box-sizing: border-box; }
@@ -34,18 +35,29 @@ select { padding: 6px; font-size: 0.9rem; border-radius: 4px; border: 1px solid 
 /* 50/50 Split Container */
 #content-area { display: flex; flex-direction: row; gap: 20px; flex-grow: 1; overflow: hidden; }
 
+/* Left Panel (Holds Map + Table) */
+#left-panel { flex: 1; display: flex; flex-direction: column; gap: 15px; overflow: hidden; min-width: 0; }
+
 /* Left Side: Table Container */
 #table-container { flex: 1; overflow-y: auto; background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border: 1px solid #e2e8f0; border-radius: 6px; }
 
 /* Right Side: JSON Panel */
 #json-panel { flex: 1; display: flex; flex-direction: column; background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border: 1px solid #e2e8f0; border-radius: 6px; overflow: hidden; }
 
-/* Accounting Groups Bar & Interactive Badges */
-#accounting-groups { background: #f8fafc; padding: 10px 15px; border-bottom: 1px solid #e2e8f0; display: none; align-items: center; gap: 8px; flex-wrap: wrap; flex-shrink: 0; }
-.group-badge { padding: 4px 10px; border-radius: 4px; font-size: 0.75rem; border: 1px solid transparent; white-space: nowrap; cursor: pointer; transition: all 0.2s; user-select: none; }
-.group-badge.active { background: #3182ce; color: white; border-color: #2b6cb0; font-weight: bold; }
-.group-badge.inactive { background: #edf2f7; color: #a0aec0; border-color: #e2e8f0; text-decoration: line-through; }
-.group-badge:hover { opacity: 0.8; }
+/* Accounting Groups - Vertical Columns layout */
+#accounting-groups { background: white; padding: 15px; border: 1px solid #e2e8f0; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: none; flex-shrink: 0; column-count: 3; column-gap: 10px; }
+.ag-header { column-span: all; font-weight: bold; color: #2d3748; font-size: 0.95rem; margin-bottom: 10px; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px; }
+.ag-card { display: flex; align-items: center; justify-content: space-between; background: #f8fafc; border: 1px solid #cbd5e0; border-radius: 6px; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,0.05); break-inside: avoid; margin-bottom: 10px; }
+.ag-card-name { padding: 6px 8px; color: #2d3748; font-weight: bold; font-size: 0.75rem; border-right: 1px solid #cbd5e0; flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ag-card-select { border: none; padding: 6px 8px; font-size: 0.75rem; cursor: pointer; font-weight: 500; outline: none; background: transparent; flex-shrink: 0; }
+
+/* Color Coded Tax Badges for the table */
+.tax-badge { font-size: 0.6rem; padding: 2px 6px; border-radius: 4px; margin-left: 8px; vertical-align: middle; white-space: nowrap; }
+.tb-1 { background: #e6fffa; color: #234e52; border: 1px solid #319795; }
+.tb-2 { background: #ebf8ff; color: #2b6cb0; border: 1px solid #3182ce; }
+.tb-3 { background: #faf5ff; color: #44337a; border: 1px solid #805ad5; }
+.tb-4 { background: #feebc8; color: #9c4221; border: 1px solid #dd6b20; }
+.tb-0 { background: #fff5f5; color: #9b2c2c; border: 1px solid #e53e3e; }
 
 #json-display { flex-grow: 1; overflow-y: auto; color: #2d3748; }
 
