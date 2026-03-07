@@ -121,10 +121,7 @@ function renderJSON() {
                 const itemData = itemDB[sku];
                 const itemName = itemData ? itemData.Name : (item.customItemName || "Unknown Item");
                 const itemAccGroup = itemData ? itemData.AccountingGroup : null;
-                
-                const groupTooltip = itemAccGroup ? `<strong>Accounting Group:</strong><br>${itemAccGroup}` : "<strong>Accounting Group:</strong><br>Not Assigned";
-                const safeGroupTooltip = groupTooltip.replace(/'/g, "\\'"); 
-                const infoIcon = `<span onclick="showInfoModal('${safeGroupTooltip}')" style="cursor: pointer; color: #a0aec0; margin-left: 6px; font-size: 1.1em; vertical-align: middle;">&#9432;</span>`;
+                const displayAccGroup = itemAccGroup ? itemAccGroup : `<span style="color: #a0aec0; font-style: italic;">None</span>`;
                 
                 let onlinePriceDisplay = (item.customItemPrice !== null && item.customItemPrice !== undefined) 
                     ? `$${parseFloat(item.customItemPrice).toFixed(2)}` 
@@ -145,11 +142,14 @@ function renderJSON() {
                 let lineTotal = priceWithTax * qty;
                 grandTotal += lineTotal;
 
+                // NEW: Tax column moved between Item Name and Acc. Group
                 tbodyHtml += `
                     <tr>
                         <td>${index + 1}</td>
                         <td style="font-weight: bold; color: #4a5568;">${sku}</td>
-                        <td style="color: #4a5568; display: flex; align-items: center; border-bottom: none;">${itemName}${taxBadge}${infoIcon}</td>
+                        <td style="color: #4a5568;">${itemName}</td>
+                        <td>${taxBadge}</td>
+                        <td style="color: #4a5568;">${displayAccGroup}</td>
                         <td>${qty}</td>
                         <td style="color: #d69e2e; font-weight: 500;">${onlinePriceDisplay}</td>
                         <td style="font-weight: 500; color: #2b6cb0;">$${lineTotal.toFixed(2)}</td>
@@ -164,10 +164,7 @@ function renderJSON() {
                         const subItemData = itemDB[subSku];
                         const subItemName = subItemData ? subItemData.Name : (subItem.customItemName || "Unknown Item");
                         const subItemAccGroup = subItemData ? subItemData.AccountingGroup : null;
-
-                        const subGroupTooltip = subItemAccGroup ? `<strong>Accounting Group:</strong><br>${subItemAccGroup}` : "<strong>Accounting Group:</strong><br>Not Assigned";
-                        const safeSubGroupTooltip = subGroupTooltip.replace(/'/g, "\\'");
-                        const subInfoIcon = `<span onclick="showInfoModal('${safeSubGroupTooltip}')" style="cursor: pointer; color: #cbd5e0; margin-left: 6px; font-size: 1.1em; vertical-align: middle;">&#9432;</span>`;
+                        const subDisplayAccGroup = subItemAccGroup ? subItemAccGroup : `<span style="color: #a0aec0; font-style: italic;">None</span>`;
 
                         let subOnlinePriceDisplay = (subItem.customItemPrice !== null && subItem.customItemPrice !== undefined) 
                             ? `$${parseFloat(subItem.customItemPrice).toFixed(2)}` 
@@ -188,13 +185,16 @@ function renderJSON() {
                         let subLineTotal = subPriceWithTax * subQty;
                         grandTotal += subLineTotal;
 
+                        // NEW: Tax column moved between Item Name and Acc. Group
                         tbodyHtml += `
                             <tr>
                                 <td></td>
                                 <td style="padding-left: 25px; color: #718096; font-size: 0.75rem;">
                                     <span style="color: #cbd5e0; margin-right: 4px;">↳</span>${subSku}
                                 </td>
-                                <td style="color: #718096; font-size: 0.75rem; display: flex; align-items: center; border-bottom: none;">${subItemName}${subTaxBadge}${subInfoIcon}</td>
+                                <td style="color: #718096; font-size: 0.75rem;">${subItemName}</td>
+                                <td>${subTaxBadge}</td>
+                                <td style="color: #718096; font-size: 0.75rem;">${subDisplayAccGroup}</td>
                                 <td style="color: #718096; font-size: 0.75rem;">${subQty}</td>
                                 <td style="color: #d69e2e; font-size: 0.75rem;">${subOnlinePriceDisplay}</td>
                                 <td style="color: #718096; font-size: 0.75rem;">$${subLineTotal.toFixed(2)}</td>
@@ -206,6 +206,7 @@ function renderJSON() {
 
             tbodyHtml += `</tbody>`;
 
+            // NEW: Header updated to match column order
             let theadHtml = `
                 <table>
                     <thead>
@@ -213,6 +214,8 @@ function renderJSON() {
                             <th>#</th>
                             <th>Item SKU</th>
                             <th>Item Name</th>
+                            <th>Tax</th>
+                            <th>Acc. Group</th>
                             <th>Quantity</th>
                             <th>Online Price</th>
                             <th>Total (w/ Tax)</th>
@@ -298,7 +301,6 @@ function runCSVProcessing() {
                         return grp ? grp.trim() : '';
                     }).filter(Boolean))];
                     
-                    // Sort the groups alphabetically (Symbols -> Numbers -> Letters)
                     uniqueAccountingGroups.sort((a, b) => {
                         const valA = a.toLowerCase();
                         const valB = b.toLowerCase();
@@ -329,7 +331,6 @@ function runCSVProcessing() {
                                 </select>
                             `;
                             
-                            // Listen for dropdown changes
                             const selectElement = card.querySelector('select');
                             selectElement.addEventListener('change', (e) => {
                                 groupTaxMapping.set(groupName, parseInt(e.target.value));
@@ -340,7 +341,6 @@ function runCSVProcessing() {
                             accountingGroupsContainer.appendChild(card);
                         });
                         
-                        // NEW: Changes it to block layout to obey the CSS Multi-column rendering
                         accountingGroupsContainer.style.display = 'block';
                     } else {
                         accountingGroupsContainer.style.display = 'none';
@@ -408,7 +408,6 @@ taxInput1.addEventListener('input', updateTaxes);
 taxInput2.addEventListener('input', updateTaxes);
 taxInput3.addEventListener('input', updateTaxes);
 taxInput4.addEventListener('input', updateTaxes);
-
 
 function getPriceInfo(sku, profileValue) {
     if (!priceDB[sku]) return { text: "", raw: null, isFallback: false }; 
