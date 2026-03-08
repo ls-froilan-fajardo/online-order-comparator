@@ -17,6 +17,15 @@ input[type="file"] { font-size: 0.8rem; color: #e2e8f0; width: 200px; }
 .btn-reset { background: #e53e3e; color: white; border: none; padding: 6px 15px; border-radius: 4px; cursor: pointer; font-weight: 600; margin-left: auto; transition: background 0.2s; }
 .btn-reset:hover { background: #c53030; }
 
+/* NEW: Download CSV Button Styling */
+.btn-download-csv { background: #ebf8ff; color: #2b6cb0; border: 1px solid #63b3ed; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 0.75rem; transition: all 0.2s; white-space: nowrap; }
+.btn-download-csv:hover { background: #bee3f8; }
+
+/* Filter Red Button Styling */
+.btn-filter-red { background: #fff5f5; color: #c53030; border: 1px solid #fc8181; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 0.75rem; transition: all 0.2s; white-space: nowrap; }
+.btn-filter-red:hover { background: #fed7d7; }
+.btn-filter-red.active { background: #e53e3e; color: white; border-color: #c53030; }
+
 /* Main Workspace */
 #main-workspace { flex-grow: 1; padding: 20px; background: #f7fafc; display: flex; flex-direction: column; overflow: hidden; }
 .placeholder-text { color: #a0aec0; text-align: center; margin-top: 10px; }
@@ -51,7 +60,7 @@ select { padding: 6px; font-size: 0.9rem; border-radius: 4px; border: 1px solid 
 .ag-card-name { padding: 6px 8px; color: #2d3748; font-weight: bold; font-size: 0.75rem; border-right: 1px solid #cbd5e0; flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ag-card-select { border: none; padding: 6px 8px; font-size: 0.75rem; cursor: pointer; font-weight: 500; outline: none; background: transparent; flex-shrink: 0; }
 
-/* Color Coded Tax Badges for the table (Margin removed) */
+/* Color Coded Tax Badges for the table */
 .tax-badge { font-size: 0.6rem; padding: 2px 6px; border-radius: 4px; vertical-align: middle; white-space: nowrap; }
 .tb-1 { background: #e6fffa; color: #234e52; border: 1px solid #319795; }
 .tb-2 { background: #ebf8ff; color: #2b6cb0; border: 1px solid #3182ce; }
