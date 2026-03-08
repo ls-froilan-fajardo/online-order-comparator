@@ -3,10 +3,11 @@ const inputAll = document.getElementById('csv-all');
 const inputPrices = document.getElementById('csv-prices');
 const btnReset = document.getElementById('btn-reset'); 
 const btnHelp = document.getElementById('help-btn'); 
-const actionBar = document.getElementById('action-bar');
+const leftActionContainer = document.getElementById('left-action-container');
 const typeFilter = document.getElementById('type-filter');
 const profileFilter = document.getElementById('profile-filter');
 const taxType = document.getElementById('tax-type'); 
+const taxInputsContainer = document.getElementById('tax-inputs-container'); 
 const taxInput1 = document.getElementById('tax-input-1');
 const taxInput2 = document.getElementById('tax-input-2');
 const taxInput3 = document.getElementById('tax-input-3');
@@ -19,6 +20,8 @@ const jsonDisplay = document.getElementById('json-display');
 const totalsBadge = document.getElementById('totals-badge'); 
 const badgePaid = document.getElementById('badge-paid');
 const badgeCalc = document.getElementById('badge-calc');
+const btnFilterRed = document.getElementById('btn-filter-red'); 
+const btnDownloadCsv = document.getElementById('btn-download-csv'); 
 const accountingGroupsContainer = document.getElementById('accounting-groups'); 
 
 // Modal DOM Elements
@@ -33,7 +36,8 @@ let itemDB = {};
 let priceDB = {};  
 let allData = [];
 let filesLoaded = false;
-let groupTaxMapping = new Map(); // Maps AccountingGroup -> Tax Level (1, 2, 3, 4, or 0 for exempt)
+let groupTaxMapping = new Map(); 
+let showMismatchesOnly = false; 
 
 // --- MODAL LOGIC & HELP INSTRUCTIONS ---
 window.showInfoModal = function(text, title = "Item Details") {
@@ -64,9 +68,60 @@ btnHelp.addEventListener('click', () => {
     showInfoModal(helpInstructions, "How to Use the Comparator");
 });
 
+// --- Download CSV Logic ---
+btnDownloadCsv.addEventListener('click', () => {
+    const table = jsonDisplay.querySelector('table');
+    if (!table) return;
+
+    let csvRows = [];
+    const rows = table.querySelectorAll('tr');
+    
+    rows.forEach(row => {
+        let rowData = [];
+        const cols = row.querySelectorAll('th, td');
+        
+        cols.forEach(col => {
+            let text = col.innerText || col.textContent; 
+            text = text.trim();
+            text = text.replace(/"/g, '""');
+            
+            if (text.search(/("|,|\n)/g) >= 0) {
+                text = `"${text}"`;
+            }
+            rowData.push(text);
+        });
+        
+        csvRows.push(rowData.join(","));
+    });
+
+    const csvString = csvRows.join("\n");
+    const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", "price_comparison.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+});
+
+// --- Toggle the Red Mismatch Filter ---
+btnFilterRed.addEventListener('click', () => {
+    showMismatchesOnly = !showMismatchesOnly;
+    if (showMismatchesOnly) {
+        btnFilterRed.classList.add('active');
+        btnFilterRed.textContent = 'Show All Rows';
+    } else {
+        btnFilterRed.classList.remove('active');
+        btnFilterRed.textContent = 'Show Red Only';
+    }
+    renderJSON();
+});
+
 // --- Helper to get the correct tax % for an item ---
 function getTaxConfig(accountingGroup) {
-    let taxLevel = 1; // Default to Tax 1 if group isn't mapped
+    let taxLevel = 1; 
     
     if (accountingGroup && groupTaxMapping.has(accountingGroup)) {
         taxLevel = parseInt(groupTaxMapping.get(accountingGroup));
@@ -81,9 +136,41 @@ function getTaxConfig(accountingGroup) {
     return { level: taxLevel, percentage: percentage };
 }
 
+// NEW: Generates the Table Badge using the dynamic percentage instead of just T1/T2
 function generateTaxBadge(taxLevel) {
     if (taxLevel === 0) return `<span class="tax-badge tb-0">Tax-Free</span>`;
-    return `<span class="tax-badge tb-${taxLevel}">T${taxLevel}</span>`;
+    
+    let pct = "0";
+    if (taxLevel === 1) pct = taxInput1.value !== "" ? taxInput1.value : "0";
+    else if (taxLevel === 2) pct = taxInput2.value !== "" ? taxInput2.value : "0";
+    else if (taxLevel === 3) pct = taxInput3.value !== "" ? taxInput3.value : "0";
+    else if (taxLevel === 4) pct = taxInput4.value !== "" ? taxInput4.value : "0";
+    
+    return `<span class="tax-badge tb-${taxLevel}">${pct}%</span>`;
+}
+
+// --- Helper to trace hierarchy and find Group overrides ---
+function getGroupOverridePrice(parentSku, childSku, currentProfile) {
+    let pData = itemDB[parentSku];
+    if (!pData) return null;
+
+    if (pData.Type && pData.Type.toLowerCase() === 'group') {
+        let pPrice = getPriceInfo(parentSku, currentProfile);
+        if (pPrice.raw !== null && !isNaN(pPrice.raw)) return pPrice;
+    }
+
+    if (pData.children && pData.children.length > 0) {
+        for (let midSku of pData.children) {
+            let midData = itemDB[midSku];
+            if (midData && midData.Type && midData.Type.toLowerCase() === 'group') {
+                if (midData.children && midData.children.includes(childSku)) {
+                    let midPrice = getPriceInfo(midSku, currentProfile);
+                    if (midPrice.raw !== null && !isNaN(midPrice.raw)) return midPrice;
+                }
+            }
+        }
+    }
+    return null;
 }
 
 // --- Centralized JSON Extractor Logic ---
@@ -108,11 +195,13 @@ function renderJSON() {
 
         let grandTotal = 0;
         let currentTaxMode = taxType.value; 
+        let isExclusive = currentTaxMode === 'exclusive';
         let currentProfile = profileFilter.value || 'Default';
         
         if (items.length > 0) {
             
             let tbodyHtml = `<tbody>`;
+            let renderedRowsCount = 0; 
             
             items.forEach((item, index) => {
                 const sku = item.sku || "N/A";
@@ -123,38 +212,51 @@ function renderJSON() {
                 const itemAccGroup = itemData ? itemData.AccountingGroup : null;
                 const displayAccGroup = itemAccGroup ? itemAccGroup : `<span style="color: #a0aec0; font-style: italic;">None</span>`;
                 
-                let onlinePriceDisplay = (item.customItemPrice !== null && item.customItemPrice !== undefined) 
-                    ? `$${parseFloat(item.customItemPrice).toFixed(2)}` 
-                    : "-";
+                let onlinePriceRaw = (item.customItemPrice !== null && item.customItemPrice !== undefined) ? parseFloat(item.customItemPrice) : null;
+                let onlinePriceDisplay = onlinePriceRaw !== null && !isNaN(onlinePriceRaw) ? `$${onlinePriceRaw.toFixed(2)}` : "-";
                 
                 let pInfo = getPriceInfo(sku, currentProfile);
                 let rawPrice = (pInfo.raw !== null && !isNaN(pInfo.raw)) ? pInfo.raw : 0;
                 
-                // MULTI-TAX LOGIC
                 let taxCfg = getTaxConfig(itemAccGroup);
                 let taxBadge = generateTaxBadge(taxCfg.level);
 
                 let priceWithTax = rawPrice;
-                if (currentTaxMode === 'exclusive') {
+                if (isExclusive) {
                     priceWithTax = rawPrice * (1 + (taxCfg.percentage / 100));
                 }
 
                 let lineTotal = priceWithTax * qty;
                 grandTotal += lineTotal;
 
-                // NEW: Tax column moved between Item Name and Acc. Group
-                tbodyHtml += `
-                    <tr>
-                        <td>${index + 1}</td>
-                        <td style="font-weight: bold; color: #4a5568;">${sku}</td>
-                        <td style="color: #4a5568;">${itemName}</td>
-                        <td>${taxBadge}</td>
-                        <td style="color: #4a5568;">${displayAccGroup}</td>
-                        <td>${qty}</td>
-                        <td style="color: #d69e2e; font-weight: 500;">${onlinePriceDisplay}</td>
-                        <td style="font-weight: 500; color: #2b6cb0;">$${lineTotal.toFixed(2)}</td>
-                    </tr>
-                `;
+                let taxCell = isExclusive ? `<td>${taxBadge}</td>` : '';
+
+                let isMismatch = false;
+                let totalCellAttr = `style="font-weight: 500; color: #2b6cb0;"`;
+                
+                if (onlinePriceRaw === null || isNaN(onlinePriceRaw)) {
+                    totalCellAttr = `style="font-weight: bold; color: #9b2c2c; background-color: #fed7d7;" title="Price missing online!"`;
+                    isMismatch = true;
+                } else if (onlinePriceRaw.toFixed(2) !== lineTotal.toFixed(2)) {
+                    totalCellAttr = `style="font-weight: bold; color: #9b2c2c; background-color: #fed7d7;" title="Price mismatch! Online: $${onlinePriceRaw.toFixed(2)}"`;
+                    isMismatch = true;
+                }
+
+                if (!showMismatchesOnly || isMismatch) {
+                    tbodyHtml += `
+                        <tr>
+                            <td>${index + 1}</td>
+                            <td style="font-weight: bold; color: #4a5568;">${sku}</td>
+                            <td style="color: #4a5568;">${itemName}</td>
+                            ${taxCell}
+                            <td style="color: #4a5568;">${displayAccGroup}</td>
+                            <td>${qty}</td>
+                            <td style="color: #d69e2e; font-weight: 500;">${onlinePriceDisplay}</td>
+                            <td ${totalCellAttr}>$${lineTotal.toFixed(2)}</td>
+                        </tr>
+                    `;
+                    renderedRowsCount++;
+                }
 
                 if (item.subItems && item.subItems.length > 0) {
                     item.subItems.forEach((subItem) => {
@@ -162,51 +264,71 @@ function renderJSON() {
                         const subQty = subItem.quantity || 1;
                         
                         const subItemData = itemDB[subSku];
-                        const subItemName = subItemData ? subItemData.Name : (subItem.customItemName || "Unknown Item");
+                        let subItemName = subItemData ? subItemData.Name : (subItem.customItemName || "Unknown Item");
                         const subItemAccGroup = subItemData ? subItemData.AccountingGroup : null;
                         const subDisplayAccGroup = subItemAccGroup ? subItemAccGroup : `<span style="color: #a0aec0; font-style: italic;">None</span>`;
 
-                        let subOnlinePriceDisplay = (subItem.customItemPrice !== null && subItem.customItemPrice !== undefined) 
-                            ? `$${parseFloat(subItem.customItemPrice).toFixed(2)}` 
-                            : "-";
+                        let subOnlinePriceRaw = (subItem.customItemPrice !== null && subItem.customItemPrice !== undefined) ? parseFloat(subItem.customItemPrice) : null;
+                        let subOnlinePriceDisplay = subOnlinePriceRaw !== null && !isNaN(subOnlinePriceRaw) ? `$${subOnlinePriceRaw.toFixed(2)}` : "-";
 
                         let subPInfo = getPriceInfo(subSku, currentProfile);
                         let subRawPrice = (subPInfo.raw !== null && !isNaN(subPInfo.raw)) ? subPInfo.raw : 0;
 
-                        // MULTI-TAX LOGIC (SUB ITEMS)
+                        let overridePInfo = getGroupOverridePrice(sku, subSku, currentProfile);
+                        if (overridePInfo) {
+                            subRawPrice = overridePInfo.raw;
+                            subItemName += ` <span title="Price inherited from parent Group" style="font-size:0.6rem; background:#ebf8ff; color:#2b6cb0; padding:2px 5px; border-radius:4px; margin-left:6px; vertical-align: middle;">Group</span>`;
+                        }
+
                         let subTaxCfg = getTaxConfig(subItemAccGroup);
                         let subTaxBadge = generateTaxBadge(subTaxCfg.level);
 
                         let subPriceWithTax = subRawPrice;
-                        if (currentTaxMode === 'exclusive') {
+                        if (isExclusive) {
                             subPriceWithTax = subRawPrice * (1 + (subTaxCfg.percentage / 100));
                         }
 
                         let subLineTotal = subPriceWithTax * subQty;
                         grandTotal += subLineTotal;
 
-                        // NEW: Tax column moved between Item Name and Acc. Group
-                        tbodyHtml += `
-                            <tr>
-                                <td></td>
-                                <td style="padding-left: 25px; color: #718096; font-size: 0.75rem;">
-                                    <span style="color: #cbd5e0; margin-right: 4px;">↳</span>${subSku}
-                                </td>
-                                <td style="color: #718096; font-size: 0.75rem;">${subItemName}</td>
-                                <td>${subTaxBadge}</td>
-                                <td style="color: #718096; font-size: 0.75rem;">${subDisplayAccGroup}</td>
-                                <td style="color: #718096; font-size: 0.75rem;">${subQty}</td>
-                                <td style="color: #d69e2e; font-size: 0.75rem;">${subOnlinePriceDisplay}</td>
-                                <td style="color: #718096; font-size: 0.75rem;">$${subLineTotal.toFixed(2)}</td>
-                            </tr>
-                        `;
+                        let subTaxCell = isExclusive ? `<td>${subTaxBadge}</td>` : '';
+
+                        let isSubMismatch = false;
+                        let subTotalCellAttr = `style="color: #718096; font-size: 0.75rem;"`;
+                        
+                        if (subOnlinePriceRaw === null || isNaN(subOnlinePriceRaw)) {
+                            subTotalCellAttr = `style="font-weight: bold; color: #9b2c2c; background-color: #fed7d7; font-size: 0.75rem;" title="Price missing online!"`;
+                            isSubMismatch = true;
+                        } else if (subOnlinePriceRaw.toFixed(2) !== subLineTotal.toFixed(2)) {
+                            subTotalCellAttr = `style="font-weight: bold; color: #9b2c2c; background-color: #fed7d7; font-size: 0.75rem;" title="Price mismatch! Online: $${subOnlinePriceRaw.toFixed(2)}"`;
+                            isSubMismatch = true;
+                        }
+
+                        if (!showMismatchesOnly || isSubMismatch) {
+                            tbodyHtml += `
+                                <tr>
+                                    <td></td>
+                                    <td style="padding-left: 25px; color: #718096; font-size: 0.75rem;">
+                                        <span style="color: #cbd5e0; margin-right: 4px;">↳</span>${subSku}
+                                    </td>
+                                    <td style="color: #718096; font-size: 0.75rem;">${subItemName}</td>
+                                    ${subTaxCell}
+                                    <td style="color: #718096; font-size: 0.75rem;">${subDisplayAccGroup}</td>
+                                    <td style="color: #718096; font-size: 0.75rem;">${subQty}</td>
+                                    <td style="color: #d69e2e; font-size: 0.75rem;">${subOnlinePriceDisplay}</td>
+                                    <td ${subTotalCellAttr}>$${subLineTotal.toFixed(2)}</td>
+                                </tr>
+                            `;
+                            renderedRowsCount++;
+                        }
                     });
                 }
             });
 
             tbodyHtml += `</tbody>`;
 
-            // NEW: Header updated to match column order
+            let taxHeader = isExclusive ? `<th>Tax</th>` : '';
+
             let theadHtml = `
                 <table>
                     <thead>
@@ -214,7 +336,7 @@ function renderJSON() {
                             <th>#</th>
                             <th>Item SKU</th>
                             <th>Item Name</th>
-                            <th>Tax</th>
+                            ${taxHeader}
                             <th>Acc. Group</th>
                             <th>Quantity</th>
                             <th>Online Price</th>
@@ -223,7 +345,11 @@ function renderJSON() {
                     </thead>
             `;
 
-            jsonDisplay.innerHTML = theadHtml + tbodyHtml + `</table>`;
+            if (showMismatchesOnly && renderedRowsCount === 0) {
+                jsonDisplay.innerHTML = `<div style="padding: 20px; color: #38a169; font-weight: bold; text-align: center; background: #f0fff4; border: 1px solid #9ae6b4; border-radius: 6px; margin: 15px;">No mismatches found! All prices match perfectly. 🎉</div>`;
+            } else {
+                jsonDisplay.innerHTML = theadHtml + tbodyHtml + `</table>`;
+            }
 
             badgePaid.textContent = `💰 Paid Online: $${paymentAmount}`;
             badgeCalc.textContent = `📊 Expected Payment: $${grandTotal.toFixed(2)}`;
@@ -261,18 +387,23 @@ btnReset.addEventListener('click', () => {
     filesLoaded = false;
     groupTaxMapping.clear();
     
+    showMismatchesOnly = false;
+    btnFilterRed.classList.remove('active');
+    btnFilterRed.textContent = 'Show Red Only';
+
     document.getElementById('output-placeholder').style.display = 'block';
-    actionBar.style.display = 'none';
+    leftActionContainer.style.display = 'none';
     tableContainer.innerHTML = "";
     jsonDisplay.innerHTML = "";
     totalsBadge.style.display = "none"; 
     accountingGroupsContainer.style.display = "none"; 
     accountingGroupsContainer.innerHTML = "";
     taxType.value = "exclusive"; 
-    taxInput1.value = "0";
-    taxInput2.value = "0";
-    taxInput3.value = "0";
-    taxInput4.value = "0";
+    taxInputsContainer.style.display = 'flex';
+    taxInput1.value = "";
+    taxInput2.value = "";
+    taxInput3.value = "";
+    taxInput4.value = "";
     closeInfoModal();
 });
 
@@ -314,19 +445,26 @@ function runCSVProcessing() {
                     if (uniqueAccountingGroups.length > 0) {
                         accountingGroupsContainer.innerHTML = `<div class="ag-header">Tax Mapping:</div>`;
                         
+                        // Current Values for dropdown generation
+                        const v1 = taxInput1.value !== "" ? taxInput1.value : "0";
+                        const v2 = taxInput2.value !== "" ? taxInput2.value : "0";
+                        const v3 = taxInput3.value !== "" ? taxInput3.value : "0";
+                        const v4 = taxInput4.value !== "" ? taxInput4.value : "0";
+
                         uniqueAccountingGroups.forEach(groupName => {
-                            groupTaxMapping.set(groupName, 1); // Set default to Tax 1
+                            groupTaxMapping.set(groupName, 1); 
                             
                             let card = document.createElement('div');
                             card.className = 'ag-card';
                             
+                            // NEW: Generates Dropdown with dynamic % values
                             card.innerHTML = `
                                 <span class="ag-card-name" title="${groupName}">${groupName}</span>
                                 <select class="ag-card-select">
-                                    <option value="1">Tax 1</option>
-                                    <option value="2">Tax 2</option>
-                                    <option value="3">Tax 3</option>
-                                    <option value="4">Tax 4</option>
+                                    <option value="1">${v1}%</option>
+                                    <option value="2">${v2}%</option>
+                                    <option value="3">${v3}%</option>
+                                    <option value="4">${v4}%</option>
                                     <option value="0">Tax-Free</option>
                                 </select>
                             `;
@@ -341,7 +479,11 @@ function runCSVProcessing() {
                             accountingGroupsContainer.appendChild(card);
                         });
                         
-                        accountingGroupsContainer.style.display = 'block';
+                        if (taxType.value === 'exclusive') {
+                            accountingGroupsContainer.style.display = 'block';
+                        } else {
+                            accountingGroupsContainer.style.display = 'none';
+                        }
                     } else {
                         accountingGroupsContainer.style.display = 'none';
                     }
@@ -388,7 +530,7 @@ function runCSVProcessing() {
                     uniqueProfiles.forEach(prof => { profileFilter.innerHTML += `<option value="${prof}">${prof}</option>`; });
                     
                     filesLoaded = true;
-                    actionBar.style.display = 'flex';
+                    leftActionContainer.style.display = 'flex';
                     renderTable(typeFilter.value, profileFilter.value);
                     renderJSON(); 
                 }
@@ -397,13 +539,50 @@ function runCSVProcessing() {
     });
 }
 
-// Global Triggers
 typeFilter.addEventListener('change', () => { renderTable(typeFilter.value, profileFilter.value); });
 profileFilter.addEventListener('change', () => { renderTable(typeFilter.value, profileFilter.value); renderJSON(); });
-taxType.addEventListener('change', () => { if (filesLoaded) { renderTable(typeFilter.value, profileFilter.value); renderJSON(); } });
 
-// Trigger updates when ANY tax input changes
-const updateTaxes = () => { if (filesLoaded) { renderTable(typeFilter.value, profileFilter.value); renderJSON(); } };
+taxType.addEventListener('change', () => { 
+    let isExclusive = taxType.value === 'exclusive';
+    
+    if (isExclusive && groupTaxMapping.size > 0) {
+        accountingGroupsContainer.style.display = 'block';
+    } else {
+        accountingGroupsContainer.style.display = 'none';
+    }
+
+    if (isExclusive) {
+        taxInputsContainer.style.display = 'flex';
+    } else {
+        taxInputsContainer.style.display = 'none';
+    }
+
+    if (filesLoaded) { 
+        renderTable(typeFilter.value, profileFilter.value); 
+        renderJSON(); 
+    } 
+});
+
+// NEW: Updates Tax Dropdown Options dynamically when text inputs are typed in
+const updateTaxes = () => { 
+    if (filesLoaded) { 
+        const selects = document.querySelectorAll('.ag-card-select');
+        const v1 = (taxInput1.value !== "" ? taxInput1.value : "0") + "%";
+        const v2 = (taxInput2.value !== "" ? taxInput2.value : "0") + "%";
+        const v3 = (taxInput3.value !== "" ? taxInput3.value : "0") + "%";
+        const v4 = (taxInput4.value !== "" ? taxInput4.value : "0") + "%";
+        
+        selects.forEach(select => {
+            if (select.options.length > 0) select.options[0].text = v1;
+            if (select.options.length > 1) select.options[1].text = v2;
+            if (select.options.length > 2) select.options[2].text = v3;
+            if (select.options.length > 3) select.options[3].text = v4;
+        });
+
+        renderTable(typeFilter.value, profileFilter.value); 
+        renderJSON(); 
+    } 
+};
 taxInput1.addEventListener('input', updateTaxes);
 taxInput2.addEventListener('input', updateTaxes);
 taxInput3.addEventListener('input', updateTaxes);
@@ -428,6 +607,9 @@ function getPriceInfo(sku, profileValue) {
 }
 
 function renderTable(typeValue, profileValue) {
+    let isExclusive = taxType.value === 'exclusive';
+    let taxHeaderHTML = isExclusive ? `<th style="color: #d69e2e;">Price (w/ Tax)</th>` : '';
+
     let html = `
         <table>
             <thead>
@@ -435,7 +617,7 @@ function renderTable(typeValue, profileValue) {
                     <th>SKU & Hierarchy</th>
                     <th>Name</th>
                     <th>Price</th>
-                    <th style="color: #d69e2e;">Price (w/ Tax)</th>
+                    ${taxHeaderHTML}
                 </tr>
             </thead>
             <tbody>
@@ -514,19 +696,17 @@ function generateRowHTML(item, level, profileValue, inheritedPriceObj = null) {
         isFallback = pInfo.isFallback;
     }
 
-    let afterTaxText = ""; 
-    let currentTaxMode = taxType.value; 
+    let isExclusive = taxType.value === 'exclusive';
+    let afterTaxCell = ""; 
 
-    if (rawCalcPrice !== null && !isNaN(rawCalcPrice)) {
-        // MULTI-TAX LOGIC FOR LEFT TABLE
-        let taxCfg = getTaxConfig(item.AccountingGroup);
-        
-        let finalPrice = rawCalcPrice; 
-        if (currentTaxMode === 'exclusive') {
-            finalPrice = rawCalcPrice * (1 + (taxCfg.percentage / 100));
+    if (isExclusive) {
+        let afterTaxText = "";
+        if (rawCalcPrice !== null && !isNaN(rawCalcPrice)) {
+            let taxCfg = getTaxConfig(item.AccountingGroup);
+            let finalPrice = rawCalcPrice * (1 + (taxCfg.percentage / 100));
+            afterTaxText = finalPrice.toFixed(2);
         }
-        
-        afterTaxText = finalPrice.toFixed(2);
+        afterTaxCell = `<td style="font-weight: 500;">${afterTaxText}</td>`;
     }
 
     let priceHtml = `<td>${priceText}</td>`;
@@ -545,7 +725,7 @@ function generateRowHTML(item, level, profileValue, inheritedPriceObj = null) {
             </td>
             <td>${item.Name || 'N/A'}</td>
             ${priceHtml}
-            <td style="font-weight: 500;">${afterTaxText}</td>
+            ${afterTaxCell}
         </tr>
     `;
 }
