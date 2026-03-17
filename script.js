@@ -60,7 +60,7 @@ btnHelp.addEventListener('click', () => {
         <ol style="padding-left: 20px; margin-top: 0; margin-bottom: 0;">
             <li style="margin-bottom: 10px;"><strong>Upload CSV Files:</strong> Upload your <em>Lightspeed formatted file</em> and your <em>Prices only</em> CSV.</li>
             <li style="margin-bottom: 10px;"><strong>Configure Taxes:</strong> Select an Account Profile, choose Tax Exclusive or Inclusive, and enter your different Tax Percentages (T1 through T4).</li>
-            <li style="margin-bottom: 10px;"><strong>Map Accounting Groups:</strong> Use the dropdown cards above the left-hand table to assign specific tax rates to specific accounting groups (or mark them Tax-Free).</li>
+            <li style="margin-bottom: 10px;"><strong>Map Accounting Groups:</strong> Expand the Tax Mapping menu to assign specific tax rates to specific accounting groups (or mark them Tax-Free).</li>
             <li style="margin-bottom: 10px;"><strong>Analyze Order:</strong> Paste an online order JSON payload into the "JSON Extractor" field.</li>
             <li><strong>Compare:</strong> The tool will pull in the online item prices, apply the exact taxes mapped to each item, and calculate the expected POS Base total!</li>
         </ol>
@@ -136,7 +136,6 @@ function getTaxConfig(accountingGroup) {
     return { level: taxLevel, percentage: percentage };
 }
 
-// NEW: Generates the Table Badge using the dynamic percentage instead of just T1/T2
 function generateTaxBadge(taxLevel) {
     if (taxLevel === 0) return `<span class="tax-badge tb-0">Tax-Free</span>`;
     
@@ -443,9 +442,29 @@ function runCSVProcessing() {
                     groupTaxMapping.clear(); 
 
                     if (uniqueAccountingGroups.length > 0) {
-                        accountingGroupsContainer.innerHTML = `<div class="ag-header">Tax Mapping:</div>`;
                         
-                        // Current Values for dropdown generation
+                        accountingGroupsContainer.innerHTML = `
+                            <div class="ag-header" id="ag-toggle" title="Click to expand/collapse">
+                                <span>Tax Mapping</span>
+                                <span id="ag-arrow" style="font-size: 0.8rem; color: #718096;">▼</span>
+                            </div>
+                            <div id="ag-cards-wrapper"></div>
+                        `;
+                        
+                        const cardsWrapper = document.getElementById('ag-cards-wrapper');
+                        const agToggle = document.getElementById('ag-toggle');
+                        const agArrow = document.getElementById('ag-arrow');
+                        
+                        agToggle.addEventListener('click', () => {
+                            if (cardsWrapper.style.display === 'none' || cardsWrapper.style.display === '') {
+                                cardsWrapper.style.display = 'block';
+                                agArrow.textContent = '▲';
+                            } else {
+                                cardsWrapper.style.display = 'none';
+                                agArrow.textContent = '▼';
+                            }
+                        });
+
                         const v1 = taxInput1.value !== "" ? taxInput1.value : "0";
                         const v2 = taxInput2.value !== "" ? taxInput2.value : "0";
                         const v3 = taxInput3.value !== "" ? taxInput3.value : "0";
@@ -457,7 +476,6 @@ function runCSVProcessing() {
                             let card = document.createElement('div');
                             card.className = 'ag-card';
                             
-                            // NEW: Generates Dropdown with dynamic % values
                             card.innerHTML = `
                                 <span class="ag-card-name" title="${groupName}">${groupName}</span>
                                 <select class="ag-card-select">
@@ -476,7 +494,7 @@ function runCSVProcessing() {
                                 renderJSON();
                             });
                             
-                            accountingGroupsContainer.appendChild(card);
+                            cardsWrapper.appendChild(card);
                         });
                         
                         if (taxType.value === 'exclusive') {
@@ -498,15 +516,18 @@ function runCSVProcessing() {
                         priceDB[sku][profile] = row['Price'];
                     });
 
-                    // --- STORE ACCOUNTING GROUP IN itemDB ---
+                    // --- STORE ACCOUNTING GROUP & SHARING STATUS IN itemDB ---
                     allData.forEach(row => {
                         if (row['Type'] && row['Type'].trim() !== '') {
                             let ag = row['Accounting group'] || row['Accounting Group']; 
+                            let sharing = row['Sharing status'] || ''; 
+                            
                             itemDB[row['SKU']] = { 
                                 SKU: row['SKU'], 
                                 Name: row['Name'], 
                                 Type: row['Type'], 
                                 AccountingGroup: ag ? ag.trim() : '',
+                                SharingStatus: sharing.trim(), 
                                 children: [] 
                             };
                         }
@@ -563,7 +584,6 @@ taxType.addEventListener('change', () => {
     } 
 });
 
-// NEW: Updates Tax Dropdown Options dynamically when text inputs are typed in
 const updateTaxes = () => { 
     if (filesLoaded) { 
         const selects = document.querySelectorAll('.ag-card-select');
@@ -717,13 +737,24 @@ function generateRowHTML(item, level, profileValue, inheritedPriceObj = null) {
         priceHtml = `<td><span title="No profile price found. Falling back to default." style="color: #a0aec0; font-style: italic;">${priceText}*</span></td>`;
     }
 
+    // NEW: Assign specific color classes based on the Sharing Status value
+    let sharingHtml = '';
+    if (item.SharingStatus) {
+        let sClass = 'sharing-local'; 
+        let sText = item.SharingStatus.toLowerCase();
+        if (sText === 'shared') sClass = 'sharing-shared';
+        else if (sText === 'global') sClass = 'sharing-global';
+        
+        sharingHtml = `<span class="sharing-badge ${sClass}">${item.SharingStatus}</span>`;
+    }
+
     return `
         <tr class="${rowClass}">
             <td>
                 ${item.SKU} 
                 <span class="type-badge">${item.Type}</span>
             </td>
-            <td>${item.Name || 'N/A'}</td>
+            <td>${item.Name || 'N/A'}${sharingHtml}</td>
             ${priceHtml}
             ${afterTaxCell}
         </tr>
