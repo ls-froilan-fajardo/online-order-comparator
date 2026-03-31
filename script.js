@@ -40,7 +40,8 @@ let groupTaxMapping = new Map();
 let showMismatchesOnly = false; 
 let discountTaxRates = {}; 
 let userFlaggedDiscounts = new Set(); 
-let focusedDiscountInput = null; // Tracks typing focus so we don't interrupt the user
+let focusedDiscountInput = null; 
+let lastParsedJSONString = ""; // NEW: Tracks the last payload to prevent dropdown locking
 
 // --- MODAL LOGIC & HELP INSTRUCTIONS ---
 window.showInfoModal = function(text, title = "Item Details") {
@@ -123,18 +124,15 @@ btnFilterRed.addEventListener('click', () => {
 });
 
 // --- Event Listeners for Dynamic Form Elements inside JSON Table ---
-
-// Updates math instantly as you type inside the custom discount tax boxes
 jsonDisplay.addEventListener('input', (e) => {
     if (e.target.classList.contains('discount-tax-input')) {
         let code = e.target.getAttribute('data-code');
         discountTaxRates[code] = e.target.value;
-        focusedDiscountInput = code; // Remember where cursor was
+        focusedDiscountInput = code; 
         renderJSON(); 
     } 
 });
 
-// Handles the checkbox clicks
 jsonDisplay.addEventListener('change', (e) => {
     if (e.target.classList.contains('discount-toggle')) {
         let rowId = e.target.getAttribute('data-rowid');
@@ -217,6 +215,21 @@ function renderJSON() {
         const jsonString = rawText.substring(startIndex, endIndex + 1);
         const parsedData = JSON.parse(jsonString);
 
+        // NEW: Check if this is a newly pasted JSON so we don't trap the dropdown!
+        let isNewPayload = (jsonString !== lastParsedJSONString);
+        lastParsedJSONString = jsonString;
+
+        // Auto-select Profile dropdown ONLY on new JSON paste
+        if (isNewPayload && parsedData.accountProfileCode && filesLoaded) {
+            let codeToSelect = parsedData.accountProfileCode.trim();
+            let optionExists = Array.from(profileFilter.options).some(opt => opt.value === codeToSelect);
+            
+            if (optionExists && profileFilter.value !== codeToSelect) {
+                profileFilter.value = codeToSelect;
+                renderTable(typeFilter.value, profileFilter.value); 
+            }
+        }
+
         const paymentAmount = parsedData?.payment?.paymentAmount || "0.00";
         const items = parsedData?.items || [];
 
@@ -275,12 +288,11 @@ function renderJSON() {
                 let appliedTaxPct = taxCfg.percentage;
                 let taxBadge = generateTaxBadge(taxCfg.level);
 
-                // FIX: Dominant Discount Tax Override
                 if (isItemDiscount) {
                     if (discountTaxRates[rowId] !== undefined && discountTaxRates[rowId] !== "") {
                         appliedTaxPct = parseFloat(discountTaxRates[rowId]) || 0;
                     } else {
-                        appliedTaxPct = 0; // Detaches completely from accounting group defaults
+                        appliedTaxPct = 0; 
                     }
                     taxBadge = `<span class="tax-badge tb-0" style="border-color: #dd6b20; color: #dd6b20; background: #fffaf0;">${appliedTaxPct}%</span>`;
                 }
@@ -393,12 +405,11 @@ function renderJSON() {
                         let subAppliedTaxPct = subTaxCfg.percentage;
                         let subTaxBadge = generateTaxBadge(subTaxCfg.level);
 
-                        // FIX: Dominant Discount Tax Override for Sub items
                         if (isSubItemDiscount) {
                             if (discountTaxRates[subRowId] !== undefined && discountTaxRates[subRowId] !== "") {
                                 subAppliedTaxPct = parseFloat(discountTaxRates[subRowId]) || 0;
                             } else {
-                                subAppliedTaxPct = 0; // Detaches completely from accounting group defaults
+                                subAppliedTaxPct = 0; 
                             }
                             subTaxBadge = `<span class="tax-badge tb-0" style="border-color: #dd6b20; color: #dd6b20; background: #fffaf0;">${subAppliedTaxPct}%</span>`;
                         }
@@ -518,7 +529,6 @@ function renderJSON() {
                 jsonDisplay.innerHTML = theadHtml + tbodyHtml + `</table>`;
             }
 
-            // Restore cursor focus seamlessly so typing isn't interrupted
             if (focusedDiscountInput) {
                 let activeEl = jsonDisplay.querySelector(`.discount-tax-input[data-code="${focusedDiscountInput}"]`);
                 if (activeEl) {
@@ -572,6 +582,7 @@ btnReset.addEventListener('click', () => {
     
     discountTaxRates = {}; 
     userFlaggedDiscounts.clear();
+    lastParsedJSONString = ""; // Reset string tracker
 
     document.getElementById('output-placeholder').style.display = 'block';
     leftActionContainer.style.display = 'none';
