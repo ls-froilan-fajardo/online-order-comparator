@@ -41,7 +41,7 @@ let showMismatchesOnly = false;
 let discountTaxRates = {}; 
 let userFlaggedDiscounts = new Set(); 
 let focusedDiscountInput = null; 
-let lastParsedJSONString = ""; // NEW: Tracks the last payload to prevent dropdown locking
+let lastParsedJSONString = ""; 
 
 // --- MODAL LOGIC & HELP INSTRUCTIONS ---
 window.showInfoModal = function(text, title = "Item Details") {
@@ -215,11 +215,9 @@ function renderJSON() {
         const jsonString = rawText.substring(startIndex, endIndex + 1);
         const parsedData = JSON.parse(jsonString);
 
-        // NEW: Check if this is a newly pasted JSON so we don't trap the dropdown!
         let isNewPayload = (jsonString !== lastParsedJSONString);
         lastParsedJSONString = jsonString;
 
-        // Auto-select Profile dropdown ONLY on new JSON paste
         if (isNewPayload && parsedData.accountProfileCode && filesLoaded) {
             let codeToSelect = parsedData.accountProfileCode.trim();
             let optionExists = Array.from(profileFilter.options).some(opt => opt.value === codeToSelect);
@@ -234,6 +232,7 @@ function renderJSON() {
         const items = parsedData?.items || [];
 
         let grandTotal = 0;
+        let onlineGrandTotal = 0;
         let currentTaxMode = taxType.value; 
         let isExclusive = currentTaxMode === 'exclusive';
         let currentProfile = profileFilter.value || 'Default';
@@ -270,13 +269,23 @@ function renderJSON() {
                     onlinePriceRaw = -Math.abs(onlinePriceRaw);
                 }
 
+                if (onlinePriceRaw !== null && !isNaN(onlinePriceRaw)) {
+                    onlineGrandTotal += (onlinePriceRaw * qty);
+                }
+
                 let onlinePriceDisplay = "-";
                 if (onlinePriceRaw !== null && !isNaN(onlinePriceRaw)) {
                     onlinePriceDisplay = onlinePriceRaw < 0 ? `-$${Math.abs(onlinePriceRaw).toFixed(2)}` : `$${onlinePriceRaw.toFixed(2)}`;
                 }
                 
                 let pInfo = getPriceInfo(sku, currentProfile);
-                let rawPrice = (pInfo.raw !== null && !isNaN(pInfo.raw)) ? pInfo.raw : 0;
+                let rawPrice = 0;
+                
+                if (pInfo.raw !== null && !isNaN(pInfo.raw)) {
+                    rawPrice = pInfo.raw;
+                } else if (onlinePriceRaw !== null && !isNaN(onlinePriceRaw)) {
+                    rawPrice = onlinePriceRaw;
+                }
                 
                 if (isItemDiscount && onlinePriceRaw !== null) {
                     rawPrice = onlinePriceRaw; 
@@ -324,7 +333,7 @@ function renderJSON() {
                     isMismatch = true;
                 } else if ((onlinePriceRaw * qty).toFixed(2) !== lineTotal.toFixed(2)) { 
                     let expectedOnlineTotal = onlinePriceRaw * qty;
-                    totalCellAttr = `style="font-weight: bold; color: #9b2c2c; background-color: #fed7d7;" title="Price mismatch! Online: ${expectedOnlineTotal < 0 ? '-$' + Math.abs(expectedOnlineTotal).toFixed(2) : '$' + expectedOnlineTotal.toFixed(2)}"`;
+                    totalCellAttr = `style="font-weight: bold; color: #9b2c2c; background-color: #fed7d7;" title="Price mismatch! Online: ${expectedOnlineTotal < 0 ? '-$' + Math.abs(expectedOnlineTotal).toFixed(2) : '$' + Math.abs(expectedOnlineTotal).toFixed(2)}"`;
                     isMismatch = true;
                 }
 
@@ -381,18 +390,30 @@ function renderJSON() {
                             subOnlinePriceRaw = -Math.abs(subOnlinePriceRaw);
                         }
 
+                        if (subOnlinePriceRaw !== null && !isNaN(subOnlinePriceRaw)) {
+                            onlineGrandTotal += (subOnlinePriceRaw * subQty);
+                        }
+
                         let subOnlinePriceDisplay = "-";
                         if (subOnlinePriceRaw !== null && !isNaN(subOnlinePriceRaw)) {
                             subOnlinePriceDisplay = subOnlinePriceRaw < 0 ? `-$${Math.abs(subOnlinePriceRaw).toFixed(2)}` : `$${subOnlinePriceRaw.toFixed(2)}`;
                         }
 
                         let subPInfo = getPriceInfo(subSku, currentProfile);
-                        let subRawPrice = (subPInfo.raw !== null && !isNaN(subPInfo.raw)) ? subPInfo.raw : 0;
+                        let subRawPrice = null;
+
+                        if (subPInfo.raw !== null && !isNaN(subPInfo.raw)) {
+                            subRawPrice = subPInfo.raw;
+                        }
 
                         let overridePInfo = getGroupOverridePrice(sku, subSku, currentProfile);
                         if (overridePInfo) {
                             subRawPrice = overridePInfo.raw;
                             subItemName += ` <span title="Price inherited from parent Group" style="font-size:0.6rem; background:#ebf8ff; color:#2b6cb0; padding:2px 5px; border-radius:4px; margin-left:6px; vertical-align: middle;">Group</span>`;
+                        }
+
+                        if (subRawPrice === null) {
+                            subRawPrice = (subOnlinePriceRaw !== null && !isNaN(subOnlinePriceRaw)) ? subOnlinePriceRaw : 0;
                         }
 
                         if (isSubItemDiscount && subOnlinePriceRaw !== null) {
@@ -447,7 +468,7 @@ function renderJSON() {
                             isSubMismatch = true;
                         } else if ((subOnlinePriceRaw * subQty).toFixed(2) !== subLineTotal.toFixed(2)) { 
                             let expectedSubOnlineTotal = subOnlinePriceRaw * subQty;
-                            subTotalCellAttr = `style="font-weight: bold; color: #9b2c2c; background-color: #fed7d7; font-size: 0.75rem;" title="Price mismatch! Online: ${expectedSubOnlineTotal < 0 ? '-$' + Math.abs(expectedSubOnlineTotal).toFixed(2) : '$' + expectedSubOnlineTotal.toFixed(2)}"`;
+                            subTotalCellAttr = `style="font-weight: bold; color: #9b2c2c; background-color: #fed7d7; font-size: 0.75rem;" title="Price mismatch! Online: ${expectedSubOnlineTotal < 0 ? '-$' + Math.abs(expectedSubOnlineTotal).toFixed(2) : '$' + Math.abs(expectedSubOnlineTotal).toFixed(2)}"`;
                             isSubMismatch = true;
                         }
 
@@ -480,6 +501,7 @@ function renderJSON() {
                 let finalAmt = baseAmt * (1 + (taxRate / 100));
                 
                 grandTotal -= finalAmt; 
+                onlineGrandTotal -= baseAmt; 
                 
                 let safeCode = code.replace(/[^a-zA-Z0-9_-]/g, '');
                 let taxCell = isExclusive ? `<td></td>` : '';
@@ -501,6 +523,40 @@ function renderJSON() {
                     </tr>
                 `;
             }
+
+            // --- Add Tip Amount ---
+            let tipAmount = parseFloat(parsedData?.payment?.tipAmount) || 0;
+            if (tipAmount > 0) {
+                grandTotal += tipAmount;
+                onlineGrandTotal += tipAmount;
+
+                let taxCell = isExclusive ? `<td></td>` : '';
+                
+                tbodyHtml += `
+                    <tr style="background-color: #f0fff4;">
+                        <td></td>
+                        <td style="font-weight: bold; color: #38a169;">TIP</td>
+                        <td style="font-weight: bold; color: #38a169;">Tips</td>
+                        ${taxCell}
+                        <td></td>
+                        <td></td>
+                        <td style="color: #d69e2e; font-weight: 500;">$${tipAmount.toFixed(2)}</td>
+                        <td></td>
+                        <td style="font-weight: bold; color: #2b6cb0;">$${tipAmount.toFixed(2)}</td>
+                    </tr>
+                `;
+            }
+
+            // --- Grand Total Footer Row ---
+            let colspanCount = isExclusive ? 6 : 5;
+            tbodyHtml += `
+                <tr style="background-color: #edf2f7; border-top: 2px solid #cbd5e0;">
+                    <td colspan="${colspanCount}" style="text-align: right; font-weight: 900; color: #2d3748; padding-right: 15px; font-size: 0.9rem;">GRAND TOTAL</td>
+                    <td style="font-weight: 900; color: #d69e2e; font-size: 0.9rem;">$${onlineGrandTotal.toFixed(2)}</td>
+                    <td></td>
+                    <td style="font-weight: 900; color: #2b6cb0; font-size: 0.9rem;">$${grandTotal.toFixed(2)}</td>
+                </tr>
+            `;
 
             tbodyHtml += `</tbody>`;
 
@@ -582,7 +638,7 @@ btnReset.addEventListener('click', () => {
     
     discountTaxRates = {}; 
     userFlaggedDiscounts.clear();
-    lastParsedJSONString = ""; // Reset string tracker
+    lastParsedJSONString = ""; 
 
     document.getElementById('output-placeholder').style.display = 'block';
     leftActionContainer.style.display = 'none';
