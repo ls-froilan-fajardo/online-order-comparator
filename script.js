@@ -41,7 +41,7 @@ let showMismatchesOnly = false;
 let discountTaxRates = {}; 
 let userFlaggedDiscounts = new Set(); 
 let focusedDiscountInput = null; 
-let lastParsedJSONString = ""; 
+let lastRawJSONInput = ""; // Tracks actual paste/text changes to safely update dropdown
 
 // --- MODAL LOGIC & HELP INSTRUCTIONS ---
 window.showInfoModal = function(text, title = "Item Details") {
@@ -201,6 +201,11 @@ function getGroupOverridePrice(parentSku, childSku, currentProfile) {
 // --- Centralized JSON Extractor Logic ---
 function renderJSON() {
     const rawText = jsonInput.value.trim();
+    
+    // Check if the user physically pasted or typed new JSON
+    let textChanged = (rawText !== lastRawJSONInput);
+    lastRawJSONInput = rawText;
+
     if (!rawText) { 
         jsonDisplay.innerHTML = ""; 
         totalsBadge.style.display = "none"; 
@@ -215,15 +220,21 @@ function renderJSON() {
         const jsonString = rawText.substring(startIndex, endIndex + 1);
         const parsedData = JSON.parse(jsonString);
 
-        let isNewPayload = (jsonString !== lastParsedJSONString);
-        lastParsedJSONString = jsonString;
-
-        if (isNewPayload && parsedData.accountProfileCode && filesLoaded) {
-            let codeToSelect = parsedData.accountProfileCode.trim();
-            let optionExists = Array.from(profileFilter.options).some(opt => opt.value === codeToSelect);
+        // Auto-select profile ONLY if a new JSON payload was just pasted
+        if (textChanged && filesLoaded) {
+            let matchedValue = 'Default';
             
-            if (optionExists && profileFilter.value !== codeToSelect) {
-                profileFilter.value = codeToSelect;
+            if (parsedData.accountProfileCode) {
+                let codeToSelect = parsedData.accountProfileCode.trim().toLowerCase();
+                let matchedOption = Array.from(profileFilter.options).find(opt => opt.value.toLowerCase() === codeToSelect);
+                if (matchedOption) {
+                    matchedValue = matchedOption.value;
+                }
+            }
+            
+            // Apply the JSON's profile if it's different from the dropdown's current state
+            if (profileFilter.value !== matchedValue) {
+                profileFilter.value = matchedValue;
                 renderTable(typeFilter.value, profileFilter.value); 
             }
         }
@@ -638,7 +649,7 @@ btnReset.addEventListener('click', () => {
     
     discountTaxRates = {}; 
     userFlaggedDiscounts.clear();
-    lastParsedJSONString = ""; 
+    lastRawJSONInput = ""; 
 
     document.getElementById('output-placeholder').style.display = 'block';
     leftActionContainer.style.display = 'none';
@@ -800,6 +811,24 @@ function runCSVProcessing() {
                     profileFilter.innerHTML = `<option value="Default">Default Price</option>`;
                     uniqueProfiles.forEach(prof => { profileFilter.innerHTML += `<option value="${prof}">${prof}</option>`; });
                     
+                    // --- PRE-SELECT PROFILE IF JSON WAS PASTED BEFORE FILES WERE LOADED ---
+                    if (lastRawJSONInput) {
+                        try {
+                            const startIdx = lastRawJSONInput.indexOf('{');
+                            const endIdx = lastRawJSONInput.lastIndexOf('}');
+                            if (startIdx !== -1 && endIdx !== -1) {
+                                const pd = JSON.parse(lastRawJSONInput.substring(startIdx, endIdx + 1));
+                                if (pd.accountProfileCode) {
+                                    let c = pd.accountProfileCode.trim().toLowerCase();
+                                    let matchedOption = Array.from(profileFilter.options).find(opt => opt.value.toLowerCase() === c);
+                                    if (matchedOption) {
+                                        profileFilter.value = matchedOption.value;
+                                    }
+                                }
+                            }
+                        } catch(e) {}
+                    }
+
                     filesLoaded = true;
                     leftActionContainer.style.display = 'flex';
                     renderTable(typeFilter.value, profileFilter.value);
