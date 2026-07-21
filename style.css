@@ -38,8 +38,8 @@ input[type="file"] { font-size: 0.8rem; color: #e2e8f0; width: 200px; }
 select { padding: 6px; font-size: 0.9rem; border-radius: 4px; border: 1px solid #cbd5e0; }
 .tax-input { width: 55px; padding: 6px; font-size: 0.9rem; border-radius: 4px; border: 1px solid #cbd5e0; text-align: right; }
 
-/* JSON Input Paste Bar */
-#json-input { flex-grow: 1; padding: 8px 12px; font-family: monospace; font-size: 0.85rem; border: 1px solid #cbd5e0; border-radius: 4px; box-sizing: border-box; }
+/* JSON Input Paste Bars */
+#json-input, #stale-json-input { flex-grow: 1; padding: 8px 12px; font-family: monospace; font-size: 0.85rem; border: 1px solid #cbd5e0; border-radius: 4px; box-sizing: border-box; }
 
 /* Split Container */
 #content-area { display: flex; flex-direction: row; gap: 20px; flex-grow: 1; overflow: hidden; }
