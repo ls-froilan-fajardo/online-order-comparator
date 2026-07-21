@@ -73,11 +73,21 @@
 
             <div class="action-half">
                 <div style="display: flex; flex-direction: column; width: 100%; gap: 10px;">
+                    <!-- JSON Extractor Input -->
                     <div style="display: flex; align-items: center; gap: 10px; width: 100%;">
                         <label for="json-input" style="white-space: nowrap;">JSON Extractor:</label>
                         <input type="text" id="json-input" placeholder="Paste your raw JSON text or server log here...">
                     </div>
                     
+                    <!-- Stale Item Price Checker Input -->
+                    <div style="display: flex; flex-direction: column; width: 100%; gap: 2px;">
+                        <div style="display: flex; align-items: center; gap: 10px; width: 100%;">
+                            <label for="stale-json-input" style="white-space: nowrap;">Stale item price checker:</label>
+                            <input type="text" id="stale-json-input" placeholder="Paste log payload array here...">
+                        </div>
+                        <div id="stale-error-message" style="color: #e53e3e; font-size: 0.75rem; margin-left: 155px;"></div>
+                    </div>
+
                     <div id="totals-badge" style="display: none; gap: 10px; align-items: center; flex-wrap: wrap; width: 100%;">
                         <span id="badge-paid" style="background: #e6fffa; color: #234e52; border: 1px solid #319795; padding: 6px 10px; border-radius: 4px; font-weight: bold; font-size: 0.85rem; white-space: nowrap;"></span>
                         <span id="badge-calc" style="background: #fff5f5; color: #9b2c2c; border: 1px solid #e53e3e; padding: 6px 10px; border-radius: 4px; font-weight: bold; font-size: 0.85rem; white-space: nowrap;"></span>
