@@ -16,6 +16,8 @@ const tableContainer = document.getElementById('table-container');
 
 // JSON DOM Elements
 const jsonInput = document.getElementById('json-input');
+const staleJsonInput = document.getElementById('stale-json-input');
+const staleErrorMessage = document.getElementById('stale-error-message');
 const jsonDisplay = document.getElementById('json-display');
 const totalsBadge = document.getElementById('totals-badge'); 
 const badgePaid = document.getElementById('badge-paid');
@@ -40,6 +42,7 @@ let groupTaxMapping = new Map();
 let showMismatchesOnly = false; 
 let discountTaxRates = {}; 
 let userFlaggedDiscounts = new Set(); 
+let userExcludedLines = new Set(); // Tracks manually excluded row IDs for Grand Total
 let focusedDiscountInput = null; 
 let lastRawJSONInput = ""; // Tracks actual paste/text changes to safely update dropdown
 
@@ -123,6 +126,71 @@ btnFilterRed.addEventListener('click', () => {
     renderJSON();
 });
 
+// --- STALE ITEM PRICE CHECKER HELPER FUNCTIONS ---
+function findValidJsonArray(text) {
+    for (let i = 0; i < text.length; i++) {
+        if (text[i] === '[') {
+            let depth = 0;
+            let inString = false;
+            let isEscape = false;
+            
+            for (let j = i; j < text.length; j++) {
+                let char = text[j];
+                
+                if (isEscape) {
+                    isEscape = false;
+                    continue;
+                }
+                if (char === '\\') {
+                    isEscape = true;
+                    continue;
+                }
+                if (char === '"') {
+                    inString = !inString;
+                    continue;
+                }
+                
+                if (!inString) {
+                    if (char === '[') depth++;
+                    if (char === ']') depth--;
+                    
+                    if (depth === 0) {
+                        let potentialJson = text.substring(i, j + 1);
+                        try {
+                            let parsed = JSON.parse(potentialJson);
+                            if (Array.isArray(parsed)) {
+                                return parsed;
+                            }
+                        } catch(e) {
+                            // Keep looking
+                        }
+                        break; 
+                    }
+                }
+            }
+        }
+    }
+    return null;
+}
+
+function getStalePostTaxMap() {
+    if (!staleJsonInput) return { items: [], error: '' };
+    const rawText = staleJsonInput.value.trim();
+    if (!rawText) return { items: [], error: '' };
+
+    const data = findValidJsonArray(rawText);
+    if (!data) {
+        return { items: [], error: 'Could not find a valid JSON array in the text.' };
+    }
+
+    const items = data.map(item => ({
+        name: (item.trxItem?.name || '').trim().toLowerCase(),
+        postTax: item.tax?.postTaxAmount !== undefined ? parseFloat(item.tax.postTaxAmount) : null
+    }));
+
+    return { items, error: '' };
+}
+
 // --- Event Listeners for Dynamic Form Elements inside JSON Table ---
 jsonDisplay.addEventListener('input', (e) => {
     if (e.target.classList.contains('discount-tax-input')) {
@@ -140,6 +208,16 @@ jsonDisplay.addEventListener('change', (e) => {
             userFlaggedDiscounts.add(rowId);
         } else {
             userFlaggedDiscounts.delete(rowId);
+        }
+        renderJSON();
+    }
+    
+    if (e.target.classList.contains('include-toggle')) {
+        let rowId = e.target.getAttribute('data-rowid');
+        if (e.target.checked) {
+            userExcludedLines.delete(rowId);
+        } else {
+            userExcludedLines.add(rowId);
         }
         renderJSON();
     }
@@ -212,6 +290,12 @@ function renderJSON() {
         return; 
     }
 
+    // Process Stale Item Price Checker data
+    const { items: staleItems, error: staleErr } = getStalePostTaxMap();
+    if (staleErrorMessage) {
+        staleErrorMessage.textContent = staleErr;
+    }
+
     try {
         const startIndex = rawText.indexOf('{');
         const endIndex = rawText.lastIndexOf('}');
@@ -244,6 +328,7 @@ function renderJSON() {
 
         let grandTotal = 0;
         let onlineGrandTotal = 0;
+        let staleGrandTotal = 0;
         let currentTaxMode = taxType.value; 
         let isExclusive = currentTaxMode === 'exclusive';
         let currentProfile = profileFilter.value || 'Default';
@@ -265,6 +350,7 @@ function renderJSON() {
 
                 let rowId = `item-${index}`;
                 let isItemDiscount = userFlaggedDiscounts.has(rowId);
+                let isIncluded = !userExcludedLines.has(rowId);
 
                 const sku = item.sku || "N/A";
                 const qty = item.quantity || 1;
@@ -280,7 +366,7 @@ function renderJSON() {
                     onlinePriceRaw = -Math.abs(onlinePriceRaw);
                 }
 
-                if (onlinePriceRaw !== null && !isNaN(onlinePriceRaw)) {
+                if (isIncluded && onlinePriceRaw !== null && !isNaN(onlinePriceRaw)) {
                     onlineGrandTotal += (onlinePriceRaw * qty);
                 }
 
@@ -328,7 +414,9 @@ function renderJSON() {
                     lineTotal = -Math.abs(lineTotal);
                 }
 
-                grandTotal += lineTotal;
+                if (isIncluded) {
+                    grandTotal += lineTotal;
+                }
 
                 let taxCell = isExclusive ? `<td>${taxBadge}</td>` : '';
 
@@ -348,7 +436,26 @@ function renderJSON() {
                     isMismatch = true;
                 }
 
-                let trStyle = isItemDiscount ? 'style="background-color: #fffaf0;"' : '';
+                // Match Stale Price from Stale Checker
+                let postTaxDisplay = "-";
+                if (staleItems.length > 0) {
+                    let matchedStale = staleItems[index];
+                    if (!matchedStale || (matchedStale.name && matchedStale.name !== itemName.trim().toLowerCase())) {
+                        matchedStale = staleItems.find(s => s.name === itemName.trim().toLowerCase());
+                    }
+                    if (matchedStale && matchedStale.postTax !== null && !isNaN(matchedStale.postTax)) {
+                        postTaxDisplay = `$${matchedStale.postTax.toFixed(2)}`;
+                        if (isIncluded) {
+                            staleGrandTotal += matchedStale.postTax;
+                        }
+                    }
+                }
+
+                let rowStyles = [];
+                if (isItemDiscount) rowStyles.push("background-color: #fffaf0;");
+                if (!isIncluded) rowStyles.push("opacity: 0.45;");
+                let trStyle = rowStyles.length > 0 ? `style="${rowStyles.join(' ')}"` : '';
+
                 let skuStyle = isItemDiscount ? 'style="font-weight: bold; color: #dd6b20;"' : 'style="font-weight: bold; color: #4a5568;"';
                 let nameStyle = isItemDiscount ? 'style="font-weight: bold; color: #dd6b20;"' : 'style="color: #4a5568;"';
                 
@@ -362,6 +469,7 @@ function renderJSON() {
                     tbodyHtml += `
                         <tr ${trStyle}>
                             <td>${index + 1}</td>
+                            <td style="text-align: center;"><input type="checkbox" class="include-toggle" data-rowid="${rowId}" ${isIncluded ? 'checked' : ''} title="Include in Grand Total"></td>
                             <td ${skuStyle}>${sku}</td>
                             <td ${nameStyle}>${itemNameDisplay}</td>
                             ${taxCell}
@@ -370,6 +478,7 @@ function renderJSON() {
                             <td style="color: #d69e2e; font-weight: 500;">${onlinePriceDisplay}</td>
                             <td style="text-align: center;"><input type="checkbox" class="discount-toggle" data-rowid="${rowId}" ${isItemDiscount ? 'checked' : ''} title="Mark as discount to deduct from total"></td>
                             <td ${totalCellAttr}>${lineTotal < 0 ? '-$' + Math.abs(lineTotal).toFixed(2) : '$' + lineTotal.toFixed(2)}</td>
+                            <td style="font-weight: 500; color: #2b6cb0;">${postTaxDisplay}</td>
                         </tr>
                     `;
                     renderedRowsCount++;
@@ -386,6 +495,7 @@ function renderJSON() {
 
                         let subRowId = `item-${index}-sub-${subIndex}`;
                         let isSubItemDiscount = userFlaggedDiscounts.has(subRowId);
+                        let isSubIncluded = !userExcludedLines.has(subRowId);
 
                         const subSku = subItem.sku || "N/A";
                         const subQty = subItem.quantity || 1;
@@ -401,7 +511,7 @@ function renderJSON() {
                             subOnlinePriceRaw = -Math.abs(subOnlinePriceRaw);
                         }
 
-                        if (subOnlinePriceRaw !== null && !isNaN(subOnlinePriceRaw)) {
+                        if (isSubIncluded && subOnlinePriceRaw !== null && !isNaN(subOnlinePriceRaw)) {
                             onlineGrandTotal += (subOnlinePriceRaw * subQty);
                         }
 
@@ -457,11 +567,17 @@ function renderJSON() {
                             subLineTotal = -Math.abs(subLineTotal);
                         }
 
-                        grandTotal += subLineTotal;
+                        if (isSubIncluded) {
+                            grandTotal += subLineTotal;
+                        }
 
                         let subTaxCell = isExclusive ? `<td>${subTaxBadge}</td>` : '';
 
-                        let subTrStyle = isSubItemDiscount ? 'style="background-color: #fffaf0;"' : '';
+                        let subRowStyles = [];
+                        if (isSubItemDiscount) subRowStyles.push("background-color: #fffaf0;");
+                        if (!isSubIncluded) subRowStyles.push("opacity: 0.45;");
+                        let subTrStyle = subRowStyles.length > 0 ? `style="${subRowStyles.join(' ')}"` : '';
+
                         let subSkuStyle = isSubItemDiscount ? 'style="font-weight: bold; color: #dd6b20;"' : '';
                         let subNameStyle = isSubItemDiscount ? 'style="font-weight: bold; color: #dd6b20; font-size: 0.75rem;"' : 'style="color: #718096; font-size: 0.75rem;"';
                         let subTotalCellAttr = isSubItemDiscount ? `style="font-weight: bold; color: #e53e3e; font-size: 0.75rem;"` : `style="color: #718096; font-size: 0.75rem;"`;
@@ -483,10 +599,22 @@ function renderJSON() {
                             isSubMismatch = true;
                         }
 
+                        let subPostTaxDisplay = "-";
+                        if (staleItems.length > 0) {
+                            let matchedSubStale = staleItems.find(s => s.name === subItemName.trim().toLowerCase());
+                            if (matchedSubStale && matchedSubStale.postTax !== null && !isNaN(matchedSubStale.postTax)) {
+                                subPostTaxDisplay = `$${matchedSubStale.postTax.toFixed(2)}`;
+                                if (isSubIncluded) {
+                                    staleGrandTotal += matchedSubStale.postTax;
+                                }
+                            }
+                        }
+
                         if (!showMismatchesOnly || isSubMismatch) {
                             tbodyHtml += `
                                 <tr ${subTrStyle}>
                                     <td></td>
+                                    <td style="text-align: center;"><input type="checkbox" class="include-toggle" data-rowid="${subRowId}" ${isSubIncluded ? 'checked' : ''} title="Include in Grand Total"></td>
                                     <td style="padding-left: 25px; color: #718096; font-size: 0.75rem;">
                                         <span style="color: #cbd5e0; margin-right: 4px;">↳</span><span ${subSkuStyle}>${subSku}</span>
                                     </td>
@@ -497,6 +625,7 @@ function renderJSON() {
                                     <td style="color: #d69e2e; font-size: 0.75rem;">${subOnlinePriceDisplay}</td>
                                     <td style="text-align: center;"><input type="checkbox" class="discount-toggle" data-rowid="${subRowId}" ${isSubItemDiscount ? 'checked' : ''} title="Mark as discount to deduct from total"></td>
                                     <td ${subTotalCellAttr}>${subLineTotal < 0 ? '-$' + Math.abs(subLineTotal).toFixed(2) : '$' + subLineTotal.toFixed(2)}</td>
+                                    <td style="font-weight: 500; color: #718096; font-size: 0.75rem;">${subPostTaxDisplay}</td>
                                 </tr>
                             `;
                             renderedRowsCount++;
@@ -511,15 +640,22 @@ function renderJSON() {
                 let taxRate = parseFloat(discountTaxRates[code]) || 0;
                 let finalAmt = baseAmt * (1 + (taxRate / 100));
                 
-                grandTotal -= finalAmt; 
-                onlineGrandTotal -= baseAmt; 
-                
                 let safeCode = code.replace(/[^a-zA-Z0-9_-]/g, '');
+                let discRowId = `disc-${safeCode}`;
+                let isDiscIncluded = !userExcludedLines.has(discRowId);
+
+                if (isDiscIncluded) {
+                    grandTotal -= finalAmt; 
+                    onlineGrandTotal -= baseAmt; 
+                }
+                
+                let discTrStyle = !isDiscIncluded ? 'style="background-color: #fffaf0; opacity: 0.45;"' : 'style="background-color: #fffaf0;"';
                 let taxCell = isExclusive ? `<td></td>` : '';
                 
                 tbodyHtml += `
-                    <tr style="background-color: #fffaf0;">
+                    <tr ${discTrStyle}>
                         <td></td>
+                        <td style="text-align: center;"><input type="checkbox" class="include-toggle" data-rowid="${discRowId}" ${isDiscIncluded ? 'checked' : ''} title="Include in Grand Total"></td>
                         <td style="font-weight: bold; color: #dd6b20; font-size: 0.75rem;">DISCOUNT</td>
                         <td style="font-weight: bold; color: #dd6b20; font-size: 0.75rem;">
                             ${code}
@@ -531,6 +667,7 @@ function renderJSON() {
                         <td></td>
                         <td></td>
                         <td style="font-weight: bold; color: #e53e3e;">-$${finalAmt.toFixed(2)}</td>
+                        <td></td>
                     </tr>
                 `;
             }
@@ -538,14 +675,21 @@ function renderJSON() {
             // --- Add Tip Amount ---
             let tipAmount = parseFloat(parsedData?.payment?.tipAmount) || 0;
             if (tipAmount > 0) {
-                grandTotal += tipAmount;
-                onlineGrandTotal += tipAmount;
+                let tipRowId = 'tip-row';
+                let isTipIncluded = !userExcludedLines.has(tipRowId);
 
+                if (isTipIncluded) {
+                    grandTotal += tipAmount;
+                    onlineGrandTotal += tipAmount;
+                }
+
+                let tipTrStyle = !isTipIncluded ? 'style="background-color: #f0fff4; opacity: 0.45;"' : 'style="background-color: #f0fff4;"';
                 let taxCell = isExclusive ? `<td></td>` : '';
                 
                 tbodyHtml += `
-                    <tr style="background-color: #f0fff4;">
+                    <tr ${tipTrStyle}>
                         <td></td>
+                        <td style="text-align: center;"><input type="checkbox" class="include-toggle" data-rowid="${tipRowId}" ${isTipIncluded ? 'checked' : ''} title="Include in Grand Total"></td>
                         <td style="font-weight: bold; color: #38a169;">TIP</td>
                         <td style="font-weight: bold; color: #38a169;">Tips</td>
                         ${taxCell}
@@ -554,18 +698,20 @@ function renderJSON() {
                         <td style="color: #d69e2e; font-weight: 500;">$${tipAmount.toFixed(2)}</td>
                         <td></td>
                         <td style="font-weight: bold; color: #2b6cb0;">$${tipAmount.toFixed(2)}</td>
+                        <td></td>
                     </tr>
                 `;
             }
 
             // --- Grand Total Footer Row ---
-            let colspanCount = isExclusive ? 6 : 5;
+            let colspanCount = isExclusive ? 7 : 6;
             tbodyHtml += `
                 <tr style="background-color: #edf2f7; border-top: 2px solid #cbd5e0;">
                     <td colspan="${colspanCount}" style="text-align: right; font-weight: 900; color: #2d3748; padding-right: 15px; font-size: 0.9rem;">GRAND TOTAL</td>
                     <td style="font-weight: 900; color: #d69e2e; font-size: 0.9rem;">$${onlineGrandTotal.toFixed(2)}</td>
                     <td></td>
                     <td style="font-weight: 900; color: #2b6cb0; font-size: 0.9rem;">$${grandTotal.toFixed(2)}</td>
+                    <td style="font-weight: 900; color: #2b6cb0; font-size: 0.9rem;">$${staleGrandTotal.toFixed(2)}</td>
                 </tr>
             `;
 
@@ -578,6 +724,7 @@ function renderJSON() {
                     <thead>
                         <tr>
                             <th>#</th>
+                            <th style="text-align: center;" title="Include in Grand Total">Inc</th>
                             <th>Item SKU</th>
                             <th>Item Name</th>
                             ${taxHeader}
@@ -586,6 +733,7 @@ function renderJSON() {
                             <th>Online Price</th>
                             <th style="color: #e53e3e; text-align: center;">Discount?</th>
                             <th>Total (w/ Tax)</th>
+                            <th>Stale Price</th>
                         </tr>
                     </thead>
             `;
@@ -622,6 +770,9 @@ function renderJSON() {
 }
 
 jsonInput.addEventListener('input', renderJSON);
+if (staleJsonInput) {
+    staleJsonInput.addEventListener('input', renderJSON);
+}
 
 // AUTOMATIC TRIGGER
 function checkInputs() {
@@ -637,6 +788,8 @@ btnReset.addEventListener('click', () => {
     inputAll.value = "";
     inputPrices.value = "";
     jsonInput.value = "";
+    if (staleJsonInput) staleJsonInput.value = "";
+    if (staleErrorMessage) staleErrorMessage.textContent = "";
     itemDB = {};
     priceDB = {};
     allData = [];
@@ -649,6 +802,7 @@ btnReset.addEventListener('click', () => {
     
     discountTaxRates = {}; 
     userFlaggedDiscounts.clear();
+    userExcludedLines.clear();
     lastRawJSONInput = ""; 
 
     document.getElementById('output-placeholder').style.display = 'block';
