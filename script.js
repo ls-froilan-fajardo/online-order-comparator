@@ -21,7 +21,6 @@ const staleErrorMessage = document.getElementById('stale-error-message');
 const jsonDisplay = document.getElementById('json-display');
 const totalsBadge = document.getElementById('totals-badge'); 
 const badgePaid = document.getElementById('badge-paid');
-const badgeCalc = document.getElementById('badge-calc');
 const btnFilterRed = document.getElementById('btn-filter-red'); 
 const btnDownloadCsv = document.getElementById('btn-download-csv'); 
 const accountingGroupsContainer = document.getElementById('accounting-groups'); 
@@ -337,7 +336,6 @@ function renderJSON() {
             
             items.forEach((item, index) => {
                 
-                // Collect order-level discounts only if not handled on line items
                 if (item.discountCode && item.discountAmountOverride !== null && item.discountAmountOverride !== undefined && item.discountPercentOverride === null) {
                     let amt = Math.abs(parseFloat(item.discountAmountOverride) || 0); 
                     if (amt > 0 && item.customItemPrice !== null) {
@@ -384,7 +382,6 @@ function renderJSON() {
 
                 let lineTotal = priceWithTax * qty;
 
-                // --- ITEM DISCOUNT & ONLINE PRICE CALCULATION ---
                 let onlinePriceRaw = (item.customItemPrice !== null && item.customItemPrice !== undefined) ? parseFloat(item.customItemPrice) : null;
                 
                 let itemDiscountBadgeHtml = "";
@@ -398,19 +395,16 @@ function renderJSON() {
                     itemDiscountBadgeHtml = `<span title="Item Discount" style="font-size:0.65rem; background:#fffaf0; color:#dd6b20; border:1px solid #fbd38d; padding:2px 5px; border-radius:4px; margin-left:6px; vertical-align:middle;">${discLabel}</span>`;
                 }
 
-                // If customItemPrice is null & discountPercentOverride is present: deduct % from Total (w/ Tax)
                 if ((onlinePriceRaw === null || isNaN(onlinePriceRaw)) && item.discountPercentOverride !== null && item.discountPercentOverride !== undefined) {
                     let pct = parseFloat(item.discountPercentOverride) || 0;
                     let discountedLineTotal = lineTotal * (1 - (pct / 100));
                     onlinePriceRaw = discountedLineTotal / qty;
                 }
-                // If customItemPrice is null & discountAmountOverride > 0: deduct fixed amount
                 else if ((onlinePriceRaw === null || isNaN(onlinePriceRaw)) && item.discountAmountOverride !== null && item.discountAmountOverride !== undefined && parseFloat(item.discountAmountOverride) > 0) {
                     let amt = parseFloat(item.discountAmountOverride) || 0;
                     let discountedLineTotal = lineTotal - amt;
                     onlinePriceRaw = discountedLineTotal / qty;
                 }
-                // Fallback to POS raw price if still null
                 else if (onlinePriceRaw === null || isNaN(onlinePriceRaw)) {
                     if (pInfo.raw !== null && !isNaN(pInfo.raw)) {
                         onlinePriceRaw = priceWithTax;
@@ -455,7 +449,6 @@ function renderJSON() {
                     isMismatch = true;
                 }
 
-                // Match Stale Price from Stale Checker
                 let postTaxDisplay = "-";
                 if (staleItems.length > 0) {
                     let matchedStale = staleItems[index];
@@ -558,7 +551,6 @@ function renderJSON() {
 
                         let subLineTotal = subPriceWithTax * subQty;
 
-                        // --- SUBITEM DISCOUNT & ONLINE PRICE CALCULATION ---
                         let subOnlinePriceRaw = (subItem.customItemPrice !== null && subItem.customItemPrice !== undefined) ? parseFloat(subItem.customItemPrice) : null;
                         
                         let subDiscountBadgeHtml = "";
@@ -792,7 +784,6 @@ function renderJSON() {
             }
 
             badgePaid.textContent = `💰 Paid Online: $${paymentAmount}`;
-            badgeCalc.textContent = `📊 Expected Payment: $${grandTotal.toFixed(2)}`;
             totalsBadge.style.display = "flex";
 
         } else {
