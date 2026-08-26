@@ -395,16 +395,23 @@ function renderJSON() {
                     itemDiscountBadgeHtml = `<span title="Item Discount" style="font-size:0.65rem; background:#fffaf0; color:#dd6b20; border:1px solid #fbd38d; padding:2px 5px; border-radius:4px; margin-left:6px; vertical-align:middle;">${discLabel}</span>`;
                 }
 
-                if ((onlinePriceRaw === null || isNaN(onlinePriceRaw)) && item.discountPercentOverride !== null && item.discountPercentOverride !== undefined) {
+                // Apply percentage discount: If customItemPrice exists, apply % to customItemPrice; otherwise apply % to POS Total (w/ Tax)
+                if (item.discountPercentOverride !== null && item.discountPercentOverride !== undefined) {
                     let pct = parseFloat(item.discountPercentOverride) || 0;
-                    let discountedLineTotal = lineTotal * (1 - (pct / 100));
-                    onlinePriceRaw = discountedLineTotal / qty;
+                    if (onlinePriceRaw !== null && !isNaN(onlinePriceRaw)) {
+                        onlinePriceRaw = onlinePriceRaw * (1 - (pct / 100));
+                    } else {
+                        let discountedLineTotal = lineTotal * (1 - (pct / 100));
+                        onlinePriceRaw = discountedLineTotal / qty;
+                    }
                 }
+                // If customItemPrice is null & discountAmountOverride > 0: deduct fixed amount from POS Total (w/ Tax)
                 else if ((onlinePriceRaw === null || isNaN(onlinePriceRaw)) && item.discountAmountOverride !== null && item.discountAmountOverride !== undefined && parseFloat(item.discountAmountOverride) > 0) {
                     let amt = parseFloat(item.discountAmountOverride) || 0;
                     let discountedLineTotal = lineTotal - amt;
                     onlinePriceRaw = discountedLineTotal / qty;
                 }
+                // Fallback to POS raw price if still null
                 else if (onlinePriceRaw === null || isNaN(onlinePriceRaw)) {
                     if (pInfo.raw !== null && !isNaN(pInfo.raw)) {
                         onlinePriceRaw = priceWithTax;
@@ -449,6 +456,7 @@ function renderJSON() {
                     isMismatch = true;
                 }
 
+                // Match Stale Price from Stale Checker
                 let postTaxDisplay = "-";
                 if (staleItems.length > 0) {
                     let matchedStale = staleItems[index];
@@ -564,10 +572,14 @@ function renderJSON() {
                             subDiscountBadgeHtml = `<span title="Item Discount" style="font-size:0.65rem; background:#fffaf0; color:#dd6b20; border:1px solid #fbd38d; padding:2px 5px; border-radius:4px; margin-left:6px; vertical-align:middle;">${subDiscLabel}</span>`;
                         }
 
-                        if ((subOnlinePriceRaw === null || isNaN(subOnlinePriceRaw)) && subItem.discountPercentOverride !== null && subItem.discountPercentOverride !== undefined) {
+                        if (subItem.discountPercentOverride !== null && subItem.discountPercentOverride !== undefined) {
                             let pct = parseFloat(subItem.discountPercentOverride) || 0;
-                            let discountedSubTotal = subLineTotal * (1 - (pct / 100));
-                            subOnlinePriceRaw = discountedSubTotal / subQty;
+                            if (subOnlinePriceRaw !== null && !isNaN(subOnlinePriceRaw)) {
+                                subOnlinePriceRaw = subOnlinePriceRaw * (1 - (pct / 100));
+                            } else {
+                                let discountedSubTotal = subLineTotal * (1 - (pct / 100));
+                                subOnlinePriceRaw = discountedSubTotal / subQty;
+                            }
                         }
                         else if ((subOnlinePriceRaw === null || isNaN(subOnlinePriceRaw)) && subItem.discountAmountOverride !== null && subItem.discountAmountOverride !== undefined && parseFloat(subItem.discountAmountOverride) > 0) {
                             let amt = parseFloat(subItem.discountAmountOverride) || 0;
