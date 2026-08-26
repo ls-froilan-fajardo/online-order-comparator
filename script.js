@@ -42,9 +42,9 @@ let groupTaxMapping = new Map();
 let showMismatchesOnly = false; 
 let discountTaxRates = {}; 
 let userFlaggedDiscounts = new Set(); 
-let userExcludedLines = new Set(); // Tracks manually excluded row IDs for Grand Total
+let userExcludedLines = new Set(); 
 let focusedDiscountInput = null; 
-let lastRawJSONInput = ""; // Tracks actual paste/text changes to safely update dropdown
+let lastRawJSONInput = ""; 
 
 // --- MODAL LOGIC & HELP INSTRUCTIONS ---
 window.showInfoModal = function(text, title = "Item Details") {
@@ -280,7 +280,6 @@ function getGroupOverridePrice(parentSku, childSku, currentProfile) {
 function renderJSON() {
     const rawText = jsonInput.value.trim();
     
-    // Check if the user physically pasted or typed new JSON
     let textChanged = (rawText !== lastRawJSONInput);
     lastRawJSONInput = rawText;
 
@@ -290,7 +289,6 @@ function renderJSON() {
         return; 
     }
 
-    // Process Stale Item Price Checker data
     const { items: staleItems, error: staleErr } = getStalePostTaxMap();
     if (staleErrorMessage) {
         staleErrorMessage.textContent = staleErr;
@@ -304,7 +302,6 @@ function renderJSON() {
         const jsonString = rawText.substring(startIndex, endIndex + 1);
         const parsedData = JSON.parse(jsonString);
 
-        // Auto-select profile ONLY if a new JSON payload was just pasted
         if (textChanged && filesLoaded) {
             let matchedValue = 'Default';
             
@@ -316,7 +313,6 @@ function renderJSON() {
                 }
             }
             
-            // Apply the JSON's profile if it's different from the dropdown's current state
             if (profileFilter.value !== matchedValue) {
                 profileFilter.value = matchedValue;
                 renderTable(typeFilter.value, profileFilter.value); 
@@ -337,15 +333,16 @@ function renderJSON() {
             
             let tbodyHtml = `<tbody>`;
             let renderedRowsCount = 0; 
-            
             let discounts = {}; 
             
             items.forEach((item, index) => {
                 
-                if (item.discountCode && item.discountAmountOverride !== null && item.discountAmountOverride !== undefined) {
-                    let code = item.discountCode;
+                // Collect order-level discounts only if not handled on line items
+                if (item.discountCode && item.discountAmountOverride !== null && item.discountAmountOverride !== undefined && item.discountPercentOverride === null) {
                     let amt = Math.abs(parseFloat(item.discountAmountOverride) || 0); 
-                    discounts[code] = amt; 
+                    if (amt > 0 && item.customItemPrice !== null) {
+                        discounts[item.discountCode] = amt; 
+                    }
                 }
 
                 let rowId = `item-${index}`;
@@ -356,38 +353,15 @@ function renderJSON() {
                 const qty = item.quantity || 1;
                 
                 const itemData = itemDB[sku];
-                const itemName = itemData ? itemData.Name : (item.customItemName || "Unknown Item");
+                let itemName = itemData ? itemData.Name : (item.customItemName || "Unknown Item");
                 const itemAccGroup = itemData ? itemData.AccountingGroup : null;
                 const displayAccGroup = itemAccGroup ? itemAccGroup : `<span style="color: #a0aec0; font-style: italic;">None</span>`;
-                
-                let onlinePriceRaw = (item.customItemPrice !== null && item.customItemPrice !== undefined) ? parseFloat(item.customItemPrice) : null;
-                
-                if (isItemDiscount && onlinePriceRaw !== null) {
-                    onlinePriceRaw = -Math.abs(onlinePriceRaw);
-                }
-
-                if (isIncluded && onlinePriceRaw !== null && !isNaN(onlinePriceRaw)) {
-                    onlineGrandTotal += (onlinePriceRaw * qty);
-                }
-
-                let onlinePriceDisplay = "-";
-                if (onlinePriceRaw !== null && !isNaN(onlinePriceRaw)) {
-                    onlinePriceDisplay = onlinePriceRaw < 0 ? `-$${Math.abs(onlinePriceRaw).toFixed(2)}` : `$${onlinePriceRaw.toFixed(2)}`;
-                }
                 
                 let pInfo = getPriceInfo(sku, currentProfile);
                 let rawPrice = 0;
                 
                 if (pInfo.raw !== null && !isNaN(pInfo.raw)) {
                     rawPrice = pInfo.raw;
-                } else if (onlinePriceRaw !== null && !isNaN(onlinePriceRaw)) {
-                    rawPrice = onlinePriceRaw;
-                }
-                
-                if (isItemDiscount && onlinePriceRaw !== null) {
-                    rawPrice = onlinePriceRaw; 
-                } else if (isItemDiscount) {
-                    rawPrice = -Math.abs(rawPrice);
                 }
 
                 let taxCfg = getTaxConfig(itemAccGroup);
@@ -410,8 +384,53 @@ function renderJSON() {
 
                 let lineTotal = priceWithTax * qty;
 
-                if (isItemDiscount) {
+                // --- ITEM DISCOUNT & ONLINE PRICE CALCULATION ---
+                let onlinePriceRaw = (item.customItemPrice !== null && item.customItemPrice !== undefined) ? parseFloat(item.customItemPrice) : null;
+                
+                let itemDiscountBadgeHtml = "";
+                if (item.discountCode) {
+                    let discLabel = item.discountCode;
+                    if (item.discountPercentOverride !== null && item.discountPercentOverride !== undefined) {
+                        discLabel += ` (-${item.discountPercentOverride}%)`;
+                    } else if (item.discountAmountOverride !== null && item.discountAmountOverride !== undefined && parseFloat(item.discountAmountOverride) > 0) {
+                        discLabel += ` (-$${parseFloat(item.discountAmountOverride).toFixed(2)})`;
+                    }
+                    itemDiscountBadgeHtml = `<span title="Item Discount" style="font-size:0.65rem; background:#fffaf0; color:#dd6b20; border:1px solid #fbd38d; padding:2px 5px; border-radius:4px; margin-left:6px; vertical-align:middle;">${discLabel}</span>`;
+                }
+
+                // If customItemPrice is null & discountPercentOverride is present: deduct % from Total (w/ Tax)
+                if ((onlinePriceRaw === null || isNaN(onlinePriceRaw)) && item.discountPercentOverride !== null && item.discountPercentOverride !== undefined) {
+                    let pct = parseFloat(item.discountPercentOverride) || 0;
+                    let discountedLineTotal = lineTotal * (1 - (pct / 100));
+                    onlinePriceRaw = discountedLineTotal / qty;
+                }
+                // If customItemPrice is null & discountAmountOverride > 0: deduct fixed amount
+                else if ((onlinePriceRaw === null || isNaN(onlinePriceRaw)) && item.discountAmountOverride !== null && item.discountAmountOverride !== undefined && parseFloat(item.discountAmountOverride) > 0) {
+                    let amt = parseFloat(item.discountAmountOverride) || 0;
+                    let discountedLineTotal = lineTotal - amt;
+                    onlinePriceRaw = discountedLineTotal / qty;
+                }
+                // Fallback to POS raw price if still null
+                else if (onlinePriceRaw === null || isNaN(onlinePriceRaw)) {
+                    if (pInfo.raw !== null && !isNaN(pInfo.raw)) {
+                        onlinePriceRaw = priceWithTax;
+                    }
+                }
+
+                if (isItemDiscount && onlinePriceRaw !== null) {
+                    onlinePriceRaw = -Math.abs(onlinePriceRaw);
+                    rawPrice = -Math.abs(rawPrice);
                     lineTotal = -Math.abs(lineTotal);
+                }
+
+                if (isIncluded && onlinePriceRaw !== null && !isNaN(onlinePriceRaw)) {
+                    onlineGrandTotal += (onlinePriceRaw * qty);
+                }
+
+                let onlinePriceDisplay = "-";
+                if (onlinePriceRaw !== null && !isNaN(onlinePriceRaw)) {
+                    let totalOnlineVal = onlinePriceRaw * qty;
+                    onlinePriceDisplay = totalOnlineVal < 0 ? `-$${Math.abs(totalOnlineVal).toFixed(2)}` : `$${totalOnlineVal.toFixed(2)}`;
                 }
 
                 if (isIncluded) {
@@ -459,7 +478,7 @@ function renderJSON() {
                 let skuStyle = isItemDiscount ? 'style="font-weight: bold; color: #dd6b20;"' : 'style="font-weight: bold; color: #4a5568;"';
                 let nameStyle = isItemDiscount ? 'style="font-weight: bold; color: #dd6b20;"' : 'style="color: #4a5568;"';
                 
-                let itemNameDisplay = itemName;
+                let itemNameDisplay = itemName + itemDiscountBadgeHtml;
                 if (isItemDiscount) {
                     let safeRowId = rowId.replace(/[^a-zA-Z0-9_-]/g, '');
                     itemNameDisplay += ` <input type="number" id="tax-discount-${safeRowId}" class="discount-tax-input" data-code="${rowId}" placeholder="Tax %" value="${discountTaxRates[rowId] !== undefined ? discountTaxRates[rowId] : ''}" style="width: 55px; margin-left: 8px; padding: 2px 4px; border: 1px solid #cbd5e0; border-radius: 4px; font-size: 0.75rem;" title="Tax % to apply to this discount">`;
@@ -487,10 +506,11 @@ function renderJSON() {
                 if (item.subItems && item.subItems.length > 0) {
                     item.subItems.forEach((subItem, subIndex) => {
                         
-                        if (subItem.discountCode && subItem.discountAmountOverride !== null && subItem.discountAmountOverride !== undefined) {
-                            let code = subItem.discountCode;
+                        if (subItem.discountCode && subItem.discountAmountOverride !== null && subItem.discountAmountOverride !== undefined && subItem.discountPercentOverride === null) {
                             let amt = Math.abs(parseFloat(subItem.discountAmountOverride) || 0); 
-                            discounts[code] = amt; 
+                            if (amt > 0 && subItem.customItemPrice !== null) {
+                                discounts[subItem.discountCode] = amt; 
+                            }
                         }
 
                         let subRowId = `item-${index}-sub-${subIndex}`;
@@ -505,21 +525,6 @@ function renderJSON() {
                         const subItemAccGroup = subItemData ? subItemData.AccountingGroup : null;
                         const subDisplayAccGroup = subItemAccGroup ? subItemAccGroup : `<span style="color: #a0aec0; font-style: italic;">None</span>`;
 
-                        let subOnlinePriceRaw = (subItem.customItemPrice !== null && subItem.customItemPrice !== undefined) ? parseFloat(subItem.customItemPrice) : null;
-                        
-                        if (isSubItemDiscount && subOnlinePriceRaw !== null) {
-                            subOnlinePriceRaw = -Math.abs(subOnlinePriceRaw);
-                        }
-
-                        if (isSubIncluded && subOnlinePriceRaw !== null && !isNaN(subOnlinePriceRaw)) {
-                            onlineGrandTotal += (subOnlinePriceRaw * subQty);
-                        }
-
-                        let subOnlinePriceDisplay = "-";
-                        if (subOnlinePriceRaw !== null && !isNaN(subOnlinePriceRaw)) {
-                            subOnlinePriceDisplay = subOnlinePriceRaw < 0 ? `-$${Math.abs(subOnlinePriceRaw).toFixed(2)}` : `$${subOnlinePriceRaw.toFixed(2)}`;
-                        }
-
                         let subPInfo = getPriceInfo(subSku, currentProfile);
                         let subRawPrice = null;
 
@@ -531,16 +536,6 @@ function renderJSON() {
                         if (overridePInfo) {
                             subRawPrice = overridePInfo.raw;
                             subItemName += ` <span title="Price inherited from parent Group" style="font-size:0.6rem; background:#ebf8ff; color:#2b6cb0; padding:2px 5px; border-radius:4px; margin-left:6px; vertical-align: middle;">Group</span>`;
-                        }
-
-                        if (subRawPrice === null) {
-                            subRawPrice = (subOnlinePriceRaw !== null && !isNaN(subOnlinePriceRaw)) ? subOnlinePriceRaw : 0;
-                        }
-
-                        if (isSubItemDiscount && subOnlinePriceRaw !== null) {
-                            subRawPrice = subOnlinePriceRaw;
-                        } else if (isSubItemDiscount) {
-                            subRawPrice = -Math.abs(subRawPrice);
                         }
 
                         let subTaxCfg = getTaxConfig(subItemAccGroup);
@@ -556,15 +551,56 @@ function renderJSON() {
                             subTaxBadge = `<span class="tax-badge tb-0" style="border-color: #dd6b20; color: #dd6b20; background: #fffaf0;">${subAppliedTaxPct}%</span>`;
                         }
 
-                        let subPriceWithTax = subRawPrice;
+                        let subPriceWithTax = (subRawPrice !== null && !isNaN(subRawPrice)) ? subRawPrice : 0;
                         if (isExclusive) {
-                            subPriceWithTax = subRawPrice * (1 + (subAppliedTaxPct / 100));
+                            subPriceWithTax = subPriceWithTax * (1 + (subAppliedTaxPct / 100));
                         }
 
                         let subLineTotal = subPriceWithTax * subQty;
 
-                        if (isSubItemDiscount) {
+                        // --- SUBITEM DISCOUNT & ONLINE PRICE CALCULATION ---
+                        let subOnlinePriceRaw = (subItem.customItemPrice !== null && subItem.customItemPrice !== undefined) ? parseFloat(subItem.customItemPrice) : null;
+                        
+                        let subDiscountBadgeHtml = "";
+                        if (subItem.discountCode) {
+                            let subDiscLabel = subItem.discountCode;
+                            if (subItem.discountPercentOverride !== null && subItem.discountPercentOverride !== undefined) {
+                                subDiscLabel += ` (-${subItem.discountPercentOverride}%)`;
+                            } else if (subItem.discountAmountOverride !== null && subItem.discountAmountOverride !== undefined && parseFloat(subItem.discountAmountOverride) > 0) {
+                                subDiscLabel += ` (-$${parseFloat(subItem.discountAmountOverride).toFixed(2)})`;
+                            }
+                            subDiscountBadgeHtml = `<span title="Item Discount" style="font-size:0.65rem; background:#fffaf0; color:#dd6b20; border:1px solid #fbd38d; padding:2px 5px; border-radius:4px; margin-left:6px; vertical-align:middle;">${subDiscLabel}</span>`;
+                        }
+
+                        if ((subOnlinePriceRaw === null || isNaN(subOnlinePriceRaw)) && subItem.discountPercentOverride !== null && subItem.discountPercentOverride !== undefined) {
+                            let pct = parseFloat(subItem.discountPercentOverride) || 0;
+                            let discountedSubTotal = subLineTotal * (1 - (pct / 100));
+                            subOnlinePriceRaw = discountedSubTotal / subQty;
+                        }
+                        else if ((subOnlinePriceRaw === null || isNaN(subOnlinePriceRaw)) && subItem.discountAmountOverride !== null && subItem.discountAmountOverride !== undefined && parseFloat(subItem.discountAmountOverride) > 0) {
+                            let amt = parseFloat(subItem.discountAmountOverride) || 0;
+                            let discountedSubTotal = subLineTotal - amt;
+                            subOnlinePriceRaw = discountedSubTotal / subQty;
+                        }
+                        else if (subOnlinePriceRaw === null || isNaN(subOnlinePriceRaw)) {
+                            if (subRawPrice !== null && !isNaN(subRawPrice)) {
+                                subOnlinePriceRaw = subPriceWithTax;
+                            }
+                        }
+
+                        if (isSubItemDiscount && subOnlinePriceRaw !== null) {
+                            subOnlinePriceRaw = -Math.abs(subOnlinePriceRaw);
                             subLineTotal = -Math.abs(subLineTotal);
+                        }
+
+                        if (isSubIncluded && subOnlinePriceRaw !== null && !isNaN(subOnlinePriceRaw)) {
+                            onlineGrandTotal += (subOnlinePriceRaw * subQty);
+                        }
+
+                        let subOnlinePriceDisplay = "-";
+                        if (subOnlinePriceRaw !== null && !isNaN(subOnlinePriceRaw)) {
+                            let totalSubOnlineVal = subOnlinePriceRaw * subQty;
+                            subOnlinePriceDisplay = totalSubOnlineVal < 0 ? `-$${Math.abs(totalSubOnlineVal).toFixed(2)}` : `$${totalSubOnlineVal.toFixed(2)}`;
                         }
 
                         if (isSubIncluded) {
@@ -582,7 +618,7 @@ function renderJSON() {
                         let subNameStyle = isSubItemDiscount ? 'style="font-weight: bold; color: #dd6b20; font-size: 0.75rem;"' : 'style="color: #718096; font-size: 0.75rem;"';
                         let subTotalCellAttr = isSubItemDiscount ? `style="font-weight: bold; color: #e53e3e; font-size: 0.75rem;"` : `style="color: #718096; font-size: 0.75rem;"`;
                         
-                        let subItemNameDisplay = subItemName;
+                        let subItemNameDisplay = subItemName + subDiscountBadgeHtml;
                         if (isSubItemDiscount) {
                             let safeSubRowId = subRowId.replace(/[^a-zA-Z0-9_-]/g, '');
                             subItemNameDisplay += ` <input type="number" id="tax-discount-${safeSubRowId}" class="discount-tax-input" data-code="${subRowId}" placeholder="Tax %" value="${discountTaxRates[subRowId] !== undefined ? discountTaxRates[subRowId] : ''}" style="width: 55px; margin-left: 8px; padding: 2px 4px; border: 1px solid #cbd5e0; border-radius: 4px; font-size: 0.75rem;" title="Tax % to apply to this discount">`;
@@ -634,7 +670,7 @@ function renderJSON() {
                 }
             });
 
-            // --- Render Consolidated Discount Rows ---
+            // --- Render Consolidated Order-Level Discount Rows ---
             for (let code in discounts) {
                 let baseAmt = discounts[code];
                 let taxRate = parseFloat(discountTaxRates[code]) || 0;
