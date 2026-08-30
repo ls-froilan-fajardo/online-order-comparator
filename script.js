@@ -23,6 +23,7 @@ const totalsBadge = document.getElementById('totals-badge');
 const badgePaid = document.getElementById('badge-paid');
 const btnFilterRed = document.getElementById('btn-filter-red'); 
 const btnDownloadCsv = document.getElementById('btn-download-csv'); 
+const chkSubitemDiscounts = document.getElementById('chk-subitem-discounts');
 const accountingGroupsContainer = document.getElementById('accounting-groups'); 
 
 // Modal DOM Elements
@@ -124,6 +125,10 @@ btnFilterRed.addEventListener('click', () => {
     }
     renderJSON();
 });
+
+if (chkSubitemDiscounts) {
+    chkSubitemDiscounts.addEventListener('change', renderJSON);
+}
 
 // --- STALE ITEM PRICE CHECKER HELPER FUNCTIONS ---
 function findValidJsonArray(text) {
@@ -327,6 +332,7 @@ function renderJSON() {
         let currentTaxMode = taxType.value; 
         let isExclusive = currentTaxMode === 'exclusive';
         let currentProfile = profileFilter.value || 'Default';
+        let applySubitemDiscounts = chkSubitemDiscounts ? chkSubitemDiscounts.checked : true;
         
         if (items.length > 0) {
             
@@ -395,7 +401,6 @@ function renderJSON() {
                     itemDiscountBadgeHtml = `<span title="Item Discount" style="font-size:0.65rem; background:#fffaf0; color:#dd6b20; border:1px solid #fbd38d; padding:2px 5px; border-radius:4px; margin-left:6px; vertical-align:middle;">${discLabel}</span>`;
                 }
 
-                // Apply percentage discount: If customItemPrice exists, apply % to customItemPrice; otherwise apply % to POS Total (w/ Tax)
                 if (item.discountPercentOverride !== null && item.discountPercentOverride !== undefined) {
                     let pct = parseFloat(item.discountPercentOverride) || 0;
                     if (onlinePriceRaw !== null && !isNaN(onlinePriceRaw)) {
@@ -405,13 +410,11 @@ function renderJSON() {
                         onlinePriceRaw = discountedLineTotal / qty;
                     }
                 }
-                // If customItemPrice is null & discountAmountOverride > 0: deduct fixed amount from POS Total (w/ Tax)
                 else if ((onlinePriceRaw === null || isNaN(onlinePriceRaw)) && item.discountAmountOverride !== null && item.discountAmountOverride !== undefined && parseFloat(item.discountAmountOverride) > 0) {
                     let amt = parseFloat(item.discountAmountOverride) || 0;
                     let discountedLineTotal = lineTotal - amt;
                     onlinePriceRaw = discountedLineTotal / qty;
                 }
-                // Fallback to POS raw price if still null
                 else if (onlinePriceRaw === null || isNaN(onlinePriceRaw)) {
                     if (pInfo.raw !== null && !isNaN(pInfo.raw)) {
                         onlinePriceRaw = priceWithTax;
@@ -456,7 +459,6 @@ function renderJSON() {
                     isMismatch = true;
                 }
 
-                // Match Stale Price from Stale Checker
                 let postTaxDisplay = "-";
                 if (staleItems.length > 0) {
                     let matchedStale = staleItems[index];
@@ -507,15 +509,24 @@ function renderJSON() {
                 if (item.subItems && item.subItems.length > 0) {
                     item.subItems.forEach((subItem, subIndex) => {
                         
-                        if (subItem.discountCode && subItem.discountAmountOverride !== null && subItem.discountAmountOverride !== undefined && subItem.discountPercentOverride === null) {
-                            let amt = Math.abs(parseFloat(subItem.discountAmountOverride) || 0); 
+                        // Inherit discount values from main combo/item if subitem doesn't define its own
+                        let subDiscCode = subItem.discountCode || (applySubitemDiscounts ? item.discountCode : null);
+                        let subDiscPct = (subItem.discountPercentOverride !== null && subItem.discountPercentOverride !== undefined) 
+                            ? subItem.discountPercentOverride 
+                            : (applySubitemDiscounts ? item.discountPercentOverride : null);
+                        let subDiscAmt = (subItem.discountAmountOverride !== null && subItem.discountAmountOverride !== undefined)
+                            ? subItem.discountAmountOverride
+                            : null;
+
+                        if (applySubitemDiscounts && subDiscCode && subDiscAmt !== null && subDiscAmt !== undefined && subDiscPct === null) {
+                            let amt = Math.abs(parseFloat(subDiscAmt) || 0); 
                             if (amt > 0 && subItem.customItemPrice !== null) {
-                                discounts[subItem.discountCode] = amt; 
+                                discounts[subDiscCode] = amt; 
                             }
                         }
 
                         let subRowId = `item-${index}-sub-${subIndex}`;
-                        let isSubItemDiscount = userFlaggedDiscounts.has(subRowId);
+                        let isSubItemDiscount = applySubitemDiscounts && userFlaggedDiscounts.has(subRowId);
                         let isSubIncluded = !userExcludedLines.has(subRowId);
 
                         const subSku = subItem.sku || "N/A";
@@ -562,18 +573,18 @@ function renderJSON() {
                         let subOnlinePriceRaw = (subItem.customItemPrice !== null && subItem.customItemPrice !== undefined) ? parseFloat(subItem.customItemPrice) : null;
                         
                         let subDiscountBadgeHtml = "";
-                        if (subItem.discountCode) {
-                            let subDiscLabel = subItem.discountCode;
-                            if (subItem.discountPercentOverride !== null && subItem.discountPercentOverride !== undefined) {
-                                subDiscLabel += ` (-${subItem.discountPercentOverride}%)`;
-                            } else if (subItem.discountAmountOverride !== null && subItem.discountAmountOverride !== undefined && parseFloat(subItem.discountAmountOverride) > 0) {
-                                subDiscLabel += ` (-$${parseFloat(subItem.discountAmountOverride).toFixed(2)})`;
+                        if (applySubitemDiscounts && subDiscCode) {
+                            let subDiscLabel = subDiscCode;
+                            if (subDiscPct !== null && subDiscPct !== undefined) {
+                                subDiscLabel += ` (-${subDiscPct}%)`;
+                            } else if (subDiscAmt !== null && subDiscAmt !== undefined && parseFloat(subDiscAmt) > 0) {
+                                subDiscLabel += ` (-$${parseFloat(subDiscAmt).toFixed(2)})`;
                             }
                             subDiscountBadgeHtml = `<span title="Item Discount" style="font-size:0.65rem; background:#fffaf0; color:#dd6b20; border:1px solid #fbd38d; padding:2px 5px; border-radius:4px; margin-left:6px; vertical-align:middle;">${subDiscLabel}</span>`;
                         }
 
-                        if (subItem.discountPercentOverride !== null && subItem.discountPercentOverride !== undefined) {
-                            let pct = parseFloat(subItem.discountPercentOverride) || 0;
+                        if (applySubitemDiscounts && subDiscPct !== null && subDiscPct !== undefined) {
+                            let pct = parseFloat(subDiscPct) || 0;
                             if (subOnlinePriceRaw !== null && !isNaN(subOnlinePriceRaw)) {
                                 subOnlinePriceRaw = subOnlinePriceRaw * (1 - (pct / 100));
                             } else {
@@ -581,8 +592,8 @@ function renderJSON() {
                                 subOnlinePriceRaw = discountedSubTotal / subQty;
                             }
                         }
-                        else if ((subOnlinePriceRaw === null || isNaN(subOnlinePriceRaw)) && subItem.discountAmountOverride !== null && subItem.discountAmountOverride !== undefined && parseFloat(subItem.discountAmountOverride) > 0) {
-                            let amt = parseFloat(subItem.discountAmountOverride) || 0;
+                        else if (applySubitemDiscounts && (subOnlinePriceRaw === null || isNaN(subOnlinePriceRaw)) && subDiscAmt !== null && subDiscAmt !== undefined && parseFloat(subDiscAmt) > 0) {
+                            let amt = parseFloat(subDiscAmt) || 0;
                             let discountedSubTotal = subLineTotal - amt;
                             subOnlinePriceRaw = discountedSubTotal / subQty;
                         }
@@ -631,11 +642,11 @@ function renderJSON() {
                         let isSubMismatch = false;
                         
                         if (subOnlinePriceRaw === null || isNaN(subOnlinePriceRaw)) {
-                            subTotalCellAttr = `style="font-weight: bold; color: #9b2c2c; background-color: #fed7d7; font-size: 0.75rem;" title="Price missing online!"`;
+                            subTotalCellAttr = `style="font-weight: bold; color: #9b2c2c; background-color: #fed7d7;" title="Price missing online!"`;
                             isSubMismatch = true;
                         } else if ((subOnlinePriceRaw * subQty).toFixed(2) !== subLineTotal.toFixed(2)) { 
                             let expectedSubOnlineTotal = subOnlinePriceRaw * subQty;
-                            subTotalCellAttr = `style="font-weight: bold; color: #9b2c2c; background-color: #fed7d7; font-size: 0.75rem;" title="Price mismatch! Online: ${expectedSubOnlineTotal < 0 ? '-$' + Math.abs(expectedSubOnlineTotal).toFixed(2) : '$' + Math.abs(expectedSubOnlineTotal).toFixed(2)}"`;
+                            subTotalCellAttr = `style="font-weight: bold; color: #9b2c2c; background-color: #fed7d7;" title="Price mismatch! Online: ${expectedSubOnlineTotal < 0 ? '-$' + Math.abs(expectedSubOnlineTotal).toFixed(2) : '$' + Math.abs(expectedSubOnlineTotal).toFixed(2)}"`;
                             isSubMismatch = true;
                         }
 
@@ -829,6 +840,7 @@ btnReset.addEventListener('click', () => {
     jsonInput.value = "";
     if (staleJsonInput) staleJsonInput.value = "";
     if (staleErrorMessage) staleErrorMessage.textContent = "";
+    if (chkSubitemDiscounts) chkSubitemDiscounts.checked = true;
     itemDB = {};
     priceDB = {};
     allData = [];
